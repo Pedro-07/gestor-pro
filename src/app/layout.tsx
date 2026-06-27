@@ -21,6 +21,22 @@ export const metadata: Metadata = {
   other: {
     'mobile-web-app-capable': 'yes',
   },
+  openGraph: {
+    title: 'Gestor Pro - Controle sua Loja',
+    description: 'Sistema completo e gratuito para gestão de estoque, vendas e clientes.',
+    url: 'https://app-gestao.vercel.app', // Substitua pelo seu domínio final depois
+    siteName: 'Gestor Pro',
+    images: [
+      {
+        url: 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&q=80&w=1200&h=630', // Imagem bonita genérica de loja para o link
+        width: 1200,
+        height: 630,
+        alt: 'Capa do Sistema Gestor Pro',
+      },
+    ],
+    locale: 'pt_BR',
+    type: 'website',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
