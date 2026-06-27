@@ -2,12 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  collection, addDoc, updateDoc, deleteDoc,
-  doc, serverTimestamp, orderBy, query as fsQuery,
-} from 'firebase/firestore'
-import { db } from '@/lib/firebase'
-import { fetchCacheFirst } from '@/lib/firestore-cache'
+import { fetchFornecedores, fetchProdutos, insertFornecedor, updateFornecedor, deleteFornecedor } from '@/lib/database'
 import type { Fornecedor } from '@/types'
 import { maskPhone, onlyLetters } from '@/lib/utils'
 import { useForm } from 'react-hook-form'
@@ -33,13 +28,6 @@ const fornecedorSchema = z.object({
 })
 type FornecedorForm = z.infer<typeof fornecedorSchema>
 
-async function fetchFornecedores(): Promise<Fornecedor[]> {
-  return fetchCacheFirst(
-    fsQuery(collection(db, 'fornecedores'), orderBy('nome')),
-    (id, data) => ({ id, ...data } as Fornecedor),
-  )
-}
-
 export default function FornecedoresPage() {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
@@ -55,10 +43,7 @@ export default function FornecedoresPage() {
 
   const { data: produtos = [] } = useQuery({
     queryKey: ['produtos'],
-    queryFn: () => fetchCacheFirst(
-      collection(db, 'produtos') as Parameters<typeof fetchCacheFirst>[0],
-      (_id, data) => data,
-    ),
+    queryFn: fetchProdutos,
   })
 
   const filtered = fornecedores.filter((f) =>
@@ -86,10 +71,10 @@ export default function FornecedoresPage() {
     setSaving(true)
     try {
       if (editingFornecedor) {
-        await updateDoc(doc(db, 'fornecedores', editingFornecedor.id), { ...data, updatedAt: serverTimestamp() })
+        await updateFornecedor(editingFornecedor.id, data)
         toast.success('Fornecedor atualizado!')
       } else {
-        await addDoc(collection(db, 'fornecedores'), { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
+        await insertFornecedor(data)
         toast.success('Fornecedor cadastrado!')
       }
       qc.invalidateQueries({ queryKey: ['fornecedores'] })
@@ -103,7 +88,7 @@ export default function FornecedoresPage() {
 
   async function handleDelete(f: Fornecedor) {
     try {
-      await deleteDoc(doc(db, 'fornecedores', f.id))
+      await deleteFornecedor(f.id)
       qc.invalidateQueries({ queryKey: ['fornecedores'] })
       toast.success('Fornecedor excluído')
       setDeleteDialog(null)

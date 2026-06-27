@@ -1,17 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
-import { doc, getDoc } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
-import type { Configuracoes } from '@/types'
-
-async function fetchAppConfig(): Promise<Configuracoes | null> {
-  const snap = await getDoc(doc(db, 'config', 'geral'))
-  return snap.exists() ? (snap.data() as Configuracoes) : null
-}
+import { fetchConfig } from '@/lib/database'
 
 export function useAppConfig() {
   const { data } = useQuery({
     queryKey: ['config'],
-    queryFn: fetchAppConfig,
+    queryFn: fetchConfig,
     staleTime: 5 * 60 * 1000, // 5 min cache
   })
 

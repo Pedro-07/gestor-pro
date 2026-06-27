@@ -2,8 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { doc, getDoc, collection, query, where, getDocs, orderBy, updateDoc, serverTimestamp } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
+import { fetchClienteById, fetchVendasByCliente, fetchParcelasByCliente, updateCliente } from '@/lib/database'
 import type { Cliente, Venda, Parcela, ClienteStatus } from '@/types'
 import { formatCurrency, formatDate, formatPhone, buildWhatsAppUrl, maskPhone, maskCPFCNPJ, onlyLetters, isValidCPF, isValidCNPJ } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -16,7 +15,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { ArrowLeft, MessageCircle, ShoppingCart, Pencil, Loader2 } from 'lucide-react'
-import { Timestamp } from 'firebase/firestore'
 import { useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -48,18 +46,6 @@ const statusMap: Record<string, { label: string; variant: 'default' | 'destructi
   atrasada: { label: 'Atrasada', variant: 'destructive' },
 }
 
-async function fetchClienteData(id: string) {
-  const [clienteSnap, vendasSnap, parcelasSnap] = await Promise.all([
-    getDoc(doc(db, 'clientes', id)),
-    getDocs(query(collection(db, 'vendas'), where('clienteId', '==', id), orderBy('createdAt', 'desc'))),
-    getDocs(query(collection(db, 'parcelas'), where('clienteId', '==', id))),
-  ])
-  const cliente = clienteSnap.exists() ? ({ id: clienteSnap.id, ...clienteSnap.data() } as Cliente) : null
-  const vendas = vendasSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Venda))
-  const parcelas = parcelasSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Parcela))
-  return { cliente, vendas, parcelas }
-}
-
 export default function ClienteDetalhePage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
@@ -69,7 +55,14 @@ export default function ClienteDetalhePage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['cliente', id],
-    queryFn: () => fetchClienteData(id),
+    queryFn: async () => {
+      const [cliente, vendas, parcelas] = await Promise.all([
+        fetchClienteById(id),
+        fetchVendasByCliente(id),
+        fetchParcelasByCliente(id),
+      ])
+      return { cliente, vendas, parcelas }
+    },
   })
 
   const { register, handleSubmit, reset, setValue, watch, control, formState: { errors } } = useForm<EditForm>({
@@ -91,7 +84,7 @@ export default function ClienteDetalhePage() {
   async function onSubmit(formData: EditForm) {
     setSaving(true)
     try {
-      await updateDoc(doc(db, 'clientes', id), { ...formData, updatedAt: serverTimestamp() })
+      await updateCliente(id, formData)
       qc.invalidateQueries({ queryKey: ['cliente', id] })
       qc.invalidateQueries({ queryKey: ['clientes'] })
       toast.success('Cliente atualizado!')
@@ -151,20 +144,14 @@ export default function ClienteDetalhePage() {
               <Badge variant={clienteStatus[cliente.status].variant}>
                 {clienteStatus[cliente.status].label}
               </Badge>
-              <Button
-                size="sm" variant="outline"
-                onClick={() => openEdit(cliente)}
-              >
-                <Pencil className="h-4 w-4 mr-1" />
-                Editar
+              <Button size="sm" variant="outline" onClick={() => openEdit(cliente)}>
+                <Pencil className="h-4 w-4 mr-1" />Editar
               </Button>
               <Button
-                size="sm"
-                variant="outline"
+                size="sm" variant="outline"
                 onClick={() => window.open(buildWhatsAppUrl(cliente.telefone, `Olá ${cliente.nome}!`), '_blank')}
               >
-                <MessageCircle className="h-4 w-4 mr-1 text-green-600" />
-                WhatsApp
+                <MessageCircle className="h-4 w-4 mr-1 text-green-600" />WhatsApp
               </Button>
             </div>
           </div>
@@ -208,8 +195,7 @@ export default function ClienteDetalhePage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <ShoppingCart className="h-4 w-4" />
-            Histórico de Compras
+            <ShoppingCart className="h-4 w-4" />Histórico de Compras
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -226,9 +212,7 @@ export default function ClienteDetalhePage() {
                     onClick={() => router.push(`/vendas/${v.id}`)}
                   >
                     <div>
-                      <p className="text-sm font-medium">
-                        {formatDate(v.createdAt instanceof Timestamp ? v.createdAt.toDate() : new Date(v.createdAt))}
-                      </p>
+                      <p className="text-sm font-medium">{formatDate(new Date(v.createdAt))}</p>
                       <p className="text-xs text-muted-foreground">
                         {v.itens.length} item(s) · {v.formaPagamento === 'promissoria' ? `${v.numeroParcelas}x` : 'À vista'}
                       </p>
@@ -254,37 +238,23 @@ export default function ClienteDetalhePage() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-1">
               <Label>Nome completo *</Label>
-              <Input
-                {...register('nome')}
-                onChange={(e) => setValue('nome', onlyLetters(e.target.value))}
-              />
+              <Input {...register('nome')} onChange={(e) => setValue('nome', onlyLetters(e.target.value))} />
               {errors.nome && <p className="text-xs text-destructive">{errors.nome.message}</p>}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <Label>CPF / CNPJ *</Label>
-                <Input
-                  {...register('cpfCnpj')}
-                  onChange={(e) => setValue('cpfCnpj', maskCPFCNPJ(e.target.value))}
-                  maxLength={18}
-                />
+                <Input {...register('cpfCnpj')} onChange={(e) => setValue('cpfCnpj', maskCPFCNPJ(e.target.value))} maxLength={18} />
                 {errors.cpfCnpj && <p className="text-xs text-destructive">{errors.cpfCnpj.message}</p>}
               </div>
               <div className="space-y-1">
                 <Label>Telefone (WhatsApp) *</Label>
-                <Input
-                  {...register('telefone')}
-                  onChange={(e) => setValue('telefone', maskPhone(e.target.value))}
-                  maxLength={15}
-                />
+                <Input {...register('telefone')} onChange={(e) => setValue('telefone', maskPhone(e.target.value))} maxLength={15} />
                 {errors.telefone && <p className="text-xs text-destructive">{errors.telefone.message}</p>}
               </div>
               <div className="space-y-1">
                 <Label>Cidade *</Label>
-                <Input
-                  {...register('cidade')}
-                  onChange={(e) => setValue('cidade', onlyLetters(e.target.value))}
-                />
+                <Input {...register('cidade')} onChange={(e) => setValue('cidade', onlyLetters(e.target.value))} />
                 {errors.cidade && <p className="text-xs text-destructive">{errors.cidade.message}</p>}
               </div>
               <div className="space-y-1">

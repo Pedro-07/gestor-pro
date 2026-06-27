@@ -2,12 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  collection, addDoc, updateDoc, deleteDoc,
-  doc, serverTimestamp, orderBy, query as fsQuery,
-} from 'firebase/firestore'
-import { db } from '@/lib/firebase'
-import { fetchCacheFirst } from '@/lib/firestore-cache'
+import { fetchClientes, fetchParcelas, insertCliente, updateCliente, deleteCliente } from '@/lib/database'
 import type { Cliente, ClienteStatus, Parcela } from '@/types'
 import { maskCPFCNPJ, maskPhone, onlyLetters, isValidCPF, isValidCNPJ, generateClientCode, formatCurrency } from '@/lib/utils'
 import { useForm, Controller } from 'react-hook-form'
@@ -48,13 +43,6 @@ const clienteSchema = z.object({
 
 type ClienteForm = z.infer<typeof clienteSchema>
 
-async function fetchClientes(): Promise<Cliente[]> {
-  return fetchCacheFirst(
-    fsQuery(collection(db, 'clientes'), orderBy('nome')),
-    (id, data) => ({ id, ...data } as Cliente),
-  )
-}
-
 const statusConfig: Record<ClienteStatus, { label: string; variant: 'default' | 'destructive' | 'secondary' }> = {
   ativo: { label: 'Ativo', variant: 'default' },
   inadimplente: { label: 'Inadimplente', variant: 'destructive' },
@@ -76,10 +64,7 @@ export default function ClientesPage() {
 
   const { data: parcelas = [] } = useQuery<Parcela[]>({
     queryKey: ['parcelas'],
-    queryFn: () => fetchCacheFirst(
-      collection(db, 'parcelas') as Parameters<typeof fetchCacheFirst>[0],
-      (id, data) => ({ id, ...data } as Parcela),
-    ),
+    queryFn: fetchParcelas,
   })
 
   function getSaldoDevedor(clienteId: string): number {
@@ -127,12 +112,12 @@ export default function ClientesPage() {
     setSaving(true)
     try {
       if (editingCliente) {
-        await updateDoc(doc(db, 'clientes', editingCliente.id), { ...data, updatedAt: serverTimestamp() })
+        await updateCliente(editingCliente.id, data)
         toast.success('Cliente atualizado!')
       } else {
         const existingCodes = clientes.map((c) => c.codigo ?? '')
         const codigo = generateClientCode(existingCodes)
-        await addDoc(collection(db, 'clientes'), { ...data, codigo, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
+        await insertCliente({ ...data, codigo })
         toast.success('Cliente cadastrado!')
       }
       qc.invalidateQueries({ queryKey: ['clientes'] })
@@ -146,7 +131,7 @@ export default function ClientesPage() {
 
   async function handleDelete(c: Cliente) {
     try {
-      await deleteDoc(doc(db, 'clientes', c.id))
+      await deleteCliente(c.id)
       qc.invalidateQueries({ queryKey: ['clientes'] })
       toast.success('Cliente excluído')
       setDeleteDialog(null)

@@ -1,5 +1,3 @@
-import { Timestamp } from 'firebase/firestore'
-
 // ─── AUTH ────────────────────────────────────────────────────────────────────
 export interface AppUser {
   uid: string
@@ -21,8 +19,8 @@ export interface Cliente {
   observacoes?: string
   status: ClienteStatus
   motivoInadimplencia?: string
-  createdAt: Timestamp
-  updatedAt: Timestamp
+  createdAt: string
+  updatedAt: string
 }
 
 // ─── FORNECEDOR ──────────────────────────────────────────────────────────────
@@ -33,8 +31,8 @@ export interface Fornecedor {
   telefone?: string
   cidade?: string
   observacoes?: string
-  createdAt: Timestamp
-  updatedAt: Timestamp
+  createdAt: string
+  updatedAt: string
 }
 
 // ─── PRODUTO / ESTOQUE ───────────────────────────────────────────────────────
@@ -66,8 +64,8 @@ export interface Produto {
   codigoBarras?: string
   fornecedorId?: string
   fornecedorNome?: string
-  createdAt: Timestamp
-  updatedAt: Timestamp
+  createdAt: string
+  updatedAt: string
 }
 
 export interface MovimentacaoEstoque {
@@ -79,7 +77,7 @@ export interface MovimentacaoEstoque {
   quantidade: number
   motivo: string
   vendaId?: string
-  createdAt: Timestamp
+  createdAt: string
 }
 
 // ─── VENDA ───────────────────────────────────────────────────────────────────
@@ -107,9 +105,9 @@ export interface Venda {
   numeroParcelas?: number
   observacoes?: string
   status: StatusVenda
-  dataVenda: Timestamp
-  createdAt: Timestamp
-  updatedAt: Timestamp
+  dataVenda: string
+  createdAt: string
+  updatedAt: string
 }
 
 // ─── PARCELA ─────────────────────────────────────────────────────────────────
@@ -118,7 +116,7 @@ export type StatusParcela = 'pendente' | 'paga' | 'atrasada' | 'parcialmente_pag
 export interface PagamentoParcela {
   id: string
   valor: number
-  dataPagamento: Timestamp
+  dataPagamento: string
   formaPagamento: FormaPagamento
   observacoes?: string
 }
@@ -133,11 +131,11 @@ export interface Parcela {
   totalParcelas: number
   valor: number
   valorPago: number
-  dataVencimento: Timestamp
+  dataVencimento: string
   status: StatusParcela
   pagamentos: PagamentoParcela[]
-  createdAt: Timestamp
-  updatedAt: Timestamp
+  createdAt: string
+  updatedAt: string
 }
 
 // ─── CONFIGURAÇÕES ───────────────────────────────────────────────────────────

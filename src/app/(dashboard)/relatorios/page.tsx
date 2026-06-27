@@ -1,9 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { collection, getDocs, Timestamp } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { fetchRelatoriosData } from '@/lib/database'
 import type { Venda, Parcela, Produto } from '@/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, isWithinInterval, format } from 'date-fns'
@@ -14,25 +13,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Download, TrendingUp, Users, Package, BarChart3 } from 'lucide-react'
-// xlsx é importado dinamicamente apenas ao exportar (evita ~1MB no bundle inicial)
 
-function getDate(ts: Timestamp | Date | string): Date {
-  if (ts instanceof Timestamp) return ts.toDate()
+function getDate(ts: Date | string): Date {
   if (ts instanceof Date) return ts
   return new Date(ts)
-}
-
-async function fetchRelatoriosData() {
-  const [vendasSnap, parcelasSnap, produtosSnap] = await Promise.all([
-    getDocs(collection(db, 'vendas')),
-    getDocs(collection(db, 'parcelas')),
-    getDocs(collection(db, 'produtos')),
-  ])
-  return {
-    vendas: vendasSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Venda)),
-    parcelas: parcelasSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Parcela)),
-    produtos: produtosSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Produto)),
-  }
 }
 
 type Periodo = 'mes_atual' | 'mes_passado' | 'semana' | 'ano'
@@ -70,7 +54,6 @@ export default function RelatoriosPage() {
 
   const totalVendasPeriodo = vendasPeriodo.reduce((acc, v) => acc + v.total, 0)
 
-  // Recebido no período (por data de pagamento)
   const totalRecebidoPeriodo = parcelas.reduce((acc, p) => {
     const pagsPeriodo = (p.pagamentos ?? []).filter((pg) =>
       isWithinInterval(getDate(pg.dataPagamento), interval)
@@ -78,7 +61,6 @@ export default function RelatoriosPage() {
     return acc + pagsPeriodo.reduce((s, pg) => s + pg.valor, 0)
   }, 0)
 
-  // Ranking clientes
   const clienteMap: Record<string, { nome: string; total: number; vendas: number }> = {}
   vendasPeriodo.forEach((v) => {
     if (!clienteMap[v.clienteId]) clienteMap[v.clienteId] = { nome: v.clienteNome, total: 0, vendas: 0 }
@@ -87,7 +69,6 @@ export default function RelatoriosPage() {
   })
   const rankingClientes = Object.values(clienteMap).sort((a, b) => b.total - a.total).slice(0, 10)
 
-  // Produtos mais vendidos
   const produtoMap: Record<string, { nome: string; quantidade: number; receita: number }> = {}
   vendasPeriodo.forEach((v) => {
     v.itens.forEach((item) => {
@@ -98,7 +79,6 @@ export default function RelatoriosPage() {
   })
   const rankingProdutos = Object.values(produtoMap).sort((a, b) => b.quantidade - a.quantidade).slice(0, 10)
 
-  // Fluxo mensal (últimos 6 meses)
   const fluxoMensal = Array.from({ length: 6 }, (_, i) => {
     const date = new Date()
     date.setMonth(date.getMonth() - (5 - i))
@@ -150,12 +130,9 @@ export default function RelatoriosPage() {
 
   return (
     <div className="space-y-4">
-      {/* Filtro Período */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <Select value={periodo} onValueChange={(v: string) => setPeriodo(v as Periodo)}>
-          <SelectTrigger className="w-48">
-            <SelectValue />
-          </SelectTrigger>
+          <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="mes_atual">Mês Atual</SelectItem>
             <SelectItem value="mes_passado">Mês Passado</SelectItem>
@@ -164,37 +141,15 @@ export default function RelatoriosPage() {
           </SelectContent>
         </Select>
         <Button variant="outline" onClick={exportarExcel}>
-          <Download className="mr-2 h-4 w-4" />
-          Exportar Excel
+          <Download className="mr-2 h-4 w-4" />Exportar Excel
         </Button>
       </div>
 
-      {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Vendas no Período</p>
-            <p className="text-2xl font-bold">{vendasPeriodo.length}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Faturado</p>
-            <p className="text-xl font-bold text-blue-600">{formatCurrency(totalVendasPeriodo)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Recebido</p>
-            <p className="text-xl font-bold text-green-600">{formatCurrency(totalRecebidoPeriodo)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Ticket Médio</p>
-            <p className="text-xl font-bold">{formatCurrency(vendasPeriodo.length > 0 ? totalVendasPeriodo / vendasPeriodo.length : 0)}</p>
-          </CardContent>
-        </Card>
+        <Card><CardContent className="pt-4 pb-4"><p className="text-xs text-muted-foreground">Vendas no Período</p><p className="text-2xl font-bold">{vendasPeriodo.length}</p></CardContent></Card>
+        <Card><CardContent className="pt-4 pb-4"><p className="text-xs text-muted-foreground">Faturado</p><p className="text-xl font-bold text-blue-600">{formatCurrency(totalVendasPeriodo)}</p></CardContent></Card>
+        <Card><CardContent className="pt-4 pb-4"><p className="text-xs text-muted-foreground">Recebido</p><p className="text-xl font-bold text-green-600">{formatCurrency(totalRecebidoPeriodo)}</p></CardContent></Card>
+        <Card><CardContent className="pt-4 pb-4"><p className="text-xs text-muted-foreground">Ticket Médio</p><p className="text-xl font-bold">{formatCurrency(vendasPeriodo.length > 0 ? totalVendasPeriodo / vendasPeriodo.length : 0)}</p></CardContent></Card>
       </div>
 
       <Tabs defaultValue="fluxo">
@@ -213,15 +168,10 @@ export default function RelatoriosPage() {
                   <div key={m.mes} className="space-y-1">
                     <div className="flex justify-between text-sm">
                       <span className="capitalize font-medium">{m.mes}</span>
-                      <span className="text-muted-foreground">
-                        Vendido: {formatCurrency(m.vendas)} · Recebido: {formatCurrency(m.entradas)}
-                      </span>
+                      <span className="text-muted-foreground">Vendido: {formatCurrency(m.vendas)} · Recebido: {formatCurrency(m.entradas)}</span>
                     </div>
                     <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-primary rounded-full"
-                        style={{ width: `${Math.min((m.entradas / (m.vendas || 1)) * 100, 100)}%` }}
-                      />
+                      <div className="h-full bg-primary rounded-full" style={{ width: `${Math.min((m.entradas / (m.vendas || 1)) * 100, 100)}%` }} />
                     </div>
                   </div>
                 ))}
@@ -240,13 +190,7 @@ export default function RelatoriosPage() {
                 <div className="space-y-2">
                   {rankingClientes.map((c, i) => (
                     <div key={i} className="flex items-center justify-between text-sm py-1 border-b last:border-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground w-6">#{i + 1}</span>
-                        <div>
-                          <p className="font-medium">{c.nome}</p>
-                          <p className="text-xs text-muted-foreground">{c.vendas} compra(s)</p>
-                        </div>
-                      </div>
+                      <div className="flex items-center gap-2"><span className="text-muted-foreground w-6">#{i + 1}</span><div><p className="font-medium">{c.nome}</p><p className="text-xs text-muted-foreground">{c.vendas} compra(s)</p></div></div>
                       <p className="font-bold">{formatCurrency(c.total)}</p>
                     </div>
                   ))}
@@ -266,13 +210,7 @@ export default function RelatoriosPage() {
                 <div className="space-y-2">
                   {rankingProdutos.map((p, i) => (
                     <div key={i} className="flex items-center justify-between text-sm py-1 border-b last:border-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground w-6">#{i + 1}</span>
-                        <div>
-                          <p className="font-medium">{p.nome}</p>
-                          <p className="text-xs text-muted-foreground">{p.quantidade} peça(s) vendida(s)</p>
-                        </div>
-                      </div>
+                      <div className="flex items-center gap-2"><span className="text-muted-foreground w-6">#{i + 1}</span><div><p className="font-medium">{p.nome}</p><p className="text-xs text-muted-foreground">{p.quantidade} peça(s) vendida(s)</p></div></div>
                       <p className="font-bold">{formatCurrency(p.receita)}</p>
                     </div>
                   ))}

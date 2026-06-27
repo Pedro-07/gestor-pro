@@ -2,12 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  collection, updateDoc, doc, serverTimestamp, Timestamp,
-  writeBatch, getDoc, getDocFromCache, query as fsQuery,
-} from 'firebase/firestore'
-import { db } from '@/lib/firebase'
-import { fetchCacheFirst } from '@/lib/firestore-cache'
+import { fetchParcelas, fetchConfig, registrarPagamento, atualizarParcelasVencidas } from '@/lib/database'
 import type { Parcela, FormaPagamento, Configuracoes } from '@/types'
 import { formatCurrency, formatDate, isOverdue, isDueInDays, buildWhatsAppUrl } from '@/lib/utils'
 import { useForm, Controller, type Resolver } from 'react-hook-form'
@@ -34,24 +29,6 @@ const pagamentoSchema = z.object({
 })
 type PagamentoForm = z.infer<typeof pagamentoSchema>
 
-async function fetchParcelas(): Promise<Parcela[]> {
-  return fetchCacheFirst(
-    collection(db, 'parcelas') as Parameters<typeof fetchCacheFirst>[0],
-    (id, data) => ({ id, ...data } as Parcela),
-  )
-}
-
-async function fetchConfig(): Promise<Configuracoes | null> {
-  const ref = doc(db, 'config', 'geral')
-  // Tenta cache local primeiro
-  try {
-    const cached = await getDocFromCache(ref)
-    if (cached.exists()) return cached.data() as Configuracoes
-  } catch { /* cache miss */ }
-  const snap = await getDoc(ref)
-  return snap.exists() ? (snap.data() as Configuracoes) : null
-}
-
 const statusConfig: Record<string, { label: string; variant: 'default' | 'destructive' | 'secondary' | 'outline' }> = {
   paga: { label: 'Paga', variant: 'default' },
   pendente: { label: 'Pendente', variant: 'secondary' },
@@ -60,7 +37,7 @@ const statusConfig: Record<string, { label: string; variant: 'default' | 'destru
 }
 
 function getDueDate(p: Parcela): Date {
-  return p.dataVencimento instanceof Timestamp ? p.dataVencimento.toDate() : new Date(p.dataVencimento)
+  return new Date(p.dataVencimento)
 }
 
 function applyTemplate(template: string, vars: Record<string, string>): string {
@@ -76,7 +53,6 @@ export default function FinanceiroPage() {
   const [pagamentoDialog, setPagamentoDialog] = useState<Parcela | null>(null)
   const [whatsappDialog, setWhatsappDialog] = useState<{ parcela: Parcela; mensagem: string } | null>(null)
   const [saving, setSaving] = useState(false)
-  // Ref para evitar múltiplas atualizações por sessão/dia
   const overdueUpdatedRef = useRef(false)
 
   const { data: parcelas = [], isLoading } = useQuery({
@@ -90,29 +66,16 @@ export default function FinanceiroPage() {
   })
 
   // Auto-update: marca como "atrasada" as parcelas pendentes cujo vencimento já passou.
-  // A chave inclui a data do dia — se o app ficar aberto após meia-noite, o useEffect
-  // rodará novamente pois `parcelas` mudará e a chave do dia seguinte ainda não existe.
   useEffect(() => {
     if (!parcelas.length || overdueUpdatedRef.current) return
 
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const todayKey = `overdueUpdated_${today.toDateString()}`
+    const todayKey = `overdueUpdated_${new Date().toDateString()}`
     if (typeof window !== 'undefined' && sessionStorage.getItem(todayKey)) return
 
-    const vencidas = parcelas.filter((p) => p.status === 'pendente' && getDueDate(p) < today)
-
-    // Marca a data mesmo que não haja vencidas (evita consultas repetidas no mesmo dia)
     if (typeof window !== 'undefined') sessionStorage.setItem(todayKey, '1')
     overdueUpdatedRef.current = true
 
-    if (!vencidas.length) return
-
-    const batch = writeBatch(db)
-    vencidas.forEach((p) => {
-      batch.update(doc(db, 'parcelas', p.id), { status: 'atrasada', updatedAt: serverTimestamp() })
-    })
-    batch.commit().then(() => {
+    atualizarParcelasVencidas(parcelas).then(() => {
       qc.invalidateQueries({ queryKey: ['parcelas'] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })
     }).catch((err) => {
@@ -144,7 +107,6 @@ export default function FinanceiroPage() {
     register, handleSubmit, reset, watch, control,
     formState: { errors },
   } = useForm<PagamentoForm>({
-    // Cast necessário: zod v4 + @hookform/resolvers v5 — z.coerce infere como `unknown` no output
     resolver: zodResolver(pagamentoSchema) as unknown as Resolver<PagamentoForm>,
     defaultValues: {
       formaPagamento: 'dinheiro',
@@ -158,24 +120,11 @@ export default function FinanceiroPage() {
     if (!pagamentoDialog) return
     setSaving(true)
     try {
-      const p = pagamentoDialog
-      const novoValorPago = p.valorPago + data.valor
-      const saldo = p.valor - novoValorPago
-      const novoStatus = saldo <= 0 ? 'paga' : 'parcialmente_paga'
-
-      const novoPagamento = {
-        id: Date.now().toString(),
+      await registrarPagamento(pagamentoDialog.id, pagamentoDialog, {
         valor: data.valor,
-        dataPagamento: Timestamp.fromDate(new Date(data.dataPagamento + 'T12:00:00')),
+        dataPagamento: data.dataPagamento,
         formaPagamento: data.formaPagamento as FormaPagamento,
-        observacoes: data.observacoes ?? '',
-      }
-
-      await updateDoc(doc(db, 'parcelas', p.id), {
-        valorPago: novoValorPago,
-        status: novoStatus,
-        pagamentos: [...(p.pagamentos ?? []), novoPagamento],
-        updatedAt: serverTimestamp(),
+        observacoes: data.observacoes,
       })
 
       qc.invalidateQueries({ queryKey: ['parcelas'] })
@@ -208,24 +157,9 @@ export default function FinanceiroPage() {
     <div className="space-y-4">
       {/* Summary */}
       <div className="grid grid-cols-3 gap-3">
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">A Receber</p>
-            <p className="text-xl font-bold text-blue-600">{formatCurrency(totalAReceber)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Recebido</p>
-            <p className="text-xl font-bold text-green-600">{formatCurrency(totalRecebido)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Em Atraso</p>
-            <p className="text-xl font-bold text-red-600">{formatCurrency(totalAtrasado)}</p>
-          </CardContent>
-        </Card>
+        <Card><CardContent className="pt-4 pb-4"><p className="text-xs text-muted-foreground">A Receber</p><p className="text-xl font-bold text-blue-600">{formatCurrency(totalAReceber)}</p></CardContent></Card>
+        <Card><CardContent className="pt-4 pb-4"><p className="text-xs text-muted-foreground">Recebido</p><p className="text-xl font-bold text-green-600">{formatCurrency(totalRecebido)}</p></CardContent></Card>
+        <Card><CardContent className="pt-4 pb-4"><p className="text-xs text-muted-foreground">Em Atraso</p><p className="text-xl font-bold text-red-600">{formatCurrency(totalAtrasado)}</p></CardContent></Card>
       </div>
 
       {/* Search */}
@@ -257,7 +191,6 @@ export default function FinanceiroPage() {
                 const overdue = p.status !== 'paga' && isOverdue(dueDate)
                 const s = overdue ? statusConfig.atrasada : statusConfig[p.status] ?? statusConfig.pendente
                 const restante = p.valor - p.valorPago
-
                 return (
                   <Card key={p.id} className={overdue ? 'border-red-300 dark:border-red-800' : ''}>
                     <CardContent className="py-3 px-4">
@@ -268,40 +201,23 @@ export default function FinanceiroPage() {
                             <Badge variant={s.variant} className="text-xs">{s.label}</Badge>
                           </div>
                           <p className="text-sm text-muted-foreground">
-                            Parcela {p.numero === 0 ? 'Entrada' : `${p.numero}/${p.totalParcelas}`} ·
-                            Vence: {formatDate(dueDate)}
+                            Parcela {p.numero === 0 ? 'Entrada' : `${p.numero}/${p.totalParcelas}`} · Vence: {formatDate(dueDate)}
                           </p>
                           {p.valorPago > 0 && p.valorPago < p.valor && (
-                            <p className="text-xs text-muted-foreground">
-                              Pago: {formatCurrency(p.valorPago)} · Restante: {formatCurrency(restante)}
-                            </p>
+                            <p className="text-xs text-muted-foreground">Pago: {formatCurrency(p.valorPago)} · Restante: {formatCurrency(restante)}</p>
                           )}
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
-                          <div className="text-right mr-2">
-                            <p className="font-bold">{formatCurrency(p.status === 'paga' ? p.valor : restante)}</p>
-                          </div>
+                          <div className="text-right mr-2"><p className="font-bold">{formatCurrency(p.status === 'paga' ? p.valor : restante)}</p></div>
                           {p.status !== 'paga' && (
                             <>
-                              <Button
-                                variant="ghost" size="icon" className="h-8 w-8"
-                                onClick={() => openCobrancaWhatsapp(p)}
-                                title="Cobrar via WhatsApp"
-                              >
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openCobrancaWhatsapp(p)} title="Cobrar via WhatsApp">
                                 <MessageCircle className="h-4 w-4 text-green-600" />
                               </Button>
-                              <Button
-                                variant="ghost" size="icon" className="h-8 w-8"
-                                onClick={() => {
-                                  setPagamentoDialog(p)
-                                  reset({
-                                    valor: p.valor - p.valorPago,
-                                    formaPagamento: 'dinheiro',
-                                    dataPagamento: new Date().toISOString().split('T')[0],
-                                  })
-                                }}
-                                title="Registrar pagamento"
-                              >
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {
+                                setPagamentoDialog(p)
+                                reset({ valor: p.valor - p.valorPago, formaPagamento: 'dinheiro', dataPagamento: new Date().toISOString().split('T')[0] })
+                              }} title="Registrar pagamento">
                                 <CheckCircle2 className="h-4 w-4 text-blue-600" />
                               </Button>
                             </>
@@ -320,12 +236,7 @@ export default function FinanceiroPage() {
       {/* Pagamento Dialog */}
       <Dialog open={!!pagamentoDialog} onOpenChange={() => setPagamentoDialog(null)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5" />
-              Registrar Pagamento
-            </DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><DollarSign className="h-5 w-5" />Registrar Pagamento</DialogTitle></DialogHeader>
           {pagamentoDialog && (
             <div className="text-sm text-muted-foreground mb-2">
               <p><strong>{pagamentoDialog.clienteNome}</strong></p>
@@ -335,47 +246,30 @@ export default function FinanceiroPage() {
           <form onSubmit={handleSubmit(onRegistrarPagamento as Parameters<typeof handleSubmit>[0])} className="space-y-4">
             <div className="space-y-1">
               <Label>Valor Pago (R$) *</Label>
-              <Input
-                type="number" step="0.01" min="0.01" placeholder="0,00"
-                {...register('valor')}
-                onKeyPress={(e) => { if (!/[\d.,]/.test(e.key)) e.preventDefault() }}
-              />
+              <Input type="number" step="0.01" min="0.01" placeholder="0,00" {...register('valor')} onKeyPress={(e) => { if (!/[\d.,]/.test(e.key)) e.preventDefault() }} />
               {errors.valor && <p className="text-xs text-destructive">{errors.valor.message}</p>}
               {pagamentoDialog && watchValor > 0 && watchValor < (pagamentoDialog.valor - pagamentoDialog.valorPago) && (
                 <p className="text-xs text-yellow-600">Pagamento parcial — restará {formatCurrency((pagamentoDialog.valor - pagamentoDialog.valorPago) - watchValor)}</p>
               )}
             </div>
-            <div className="space-y-1">
-              <Label>Data do Pagamento *</Label>
-              <Input type="date" {...register('dataPagamento')} />
-            </div>
+            <div className="space-y-1"><Label>Data do Pagamento *</Label><Input type="date" {...register('dataPagamento')} /></div>
             <div className="space-y-1">
               <Label>Forma de Pagamento</Label>
-              <Controller
-                name="formaPagamento"
-                control={control}
-                render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="dinheiro">Dinheiro</SelectItem>
-                      <SelectItem value="pix">PIX</SelectItem>
-                      <SelectItem value="cartao">Cartão</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-              />
+              <Controller name="formaPagamento" control={control} render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="dinheiro">Dinheiro</SelectItem>
+                    <SelectItem value="pix">PIX</SelectItem>
+                    <SelectItem value="cartao">Cartão</SelectItem>
+                  </SelectContent>
+                </Select>
+              )} />
             </div>
-            <div className="space-y-1">
-              <Label>Observações</Label>
-              <Textarea rows={2} {...register('observacoes')} />
-            </div>
+            <div className="space-y-1"><Label>Observações</Label><Textarea rows={2} {...register('observacoes')} /></div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setPagamentoDialog(null)}>Cancelar</Button>
-              <Button type="submit" disabled={saving}>
-                {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Confirmar
-              </Button>
+              <Button type="submit" disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirmar</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -389,25 +283,12 @@ export default function FinanceiroPage() {
             <div className="space-y-3">
               <div className="space-y-1">
                 <Label>Mensagem (editável)</Label>
-                <Textarea
-                  rows={8}
-                  value={whatsappDialog.mensagem}
-                  onChange={(e) => setWhatsappDialog({ ...whatsappDialog, mensagem: e.target.value })}
-                  className="font-mono text-xs"
-                />
+                <Textarea rows={8} value={whatsappDialog.mensagem} onChange={(e) => setWhatsappDialog({ ...whatsappDialog, mensagem: e.target.value })} className="font-mono text-xs" />
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setWhatsappDialog(null)}>Cancelar</Button>
-                <Button
-                  onClick={() => {
-                    const url = buildWhatsAppUrl(whatsappDialog.parcela.clienteTelefone, whatsappDialog.mensagem)
-                    window.open(url, '_blank')
-                    setWhatsappDialog(null)
-                  }}
-                  className="bg-green-600 hover:bg-green-700 text-white"
-                >
-                  <MessageCircle className="mr-2 h-4 w-4" />
-                  Abrir WhatsApp
+                <Button onClick={() => { window.open(buildWhatsAppUrl(whatsappDialog.parcela.clienteTelefone, whatsappDialog.mensagem), '_blank'); setWhatsappDialog(null) }} className="bg-green-600 hover:bg-green-700 text-white">
+                  <MessageCircle className="mr-2 h-4 w-4" />Abrir WhatsApp
                 </Button>
               </DialogFooter>
             </div>

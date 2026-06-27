@@ -3,8 +3,7 @@
 import { usePathname } from 'next/navigation'
 import { Menu, Moon, Sun, LogOut } from 'lucide-react'
 import { useTheme } from 'next-themes'
-import { signOut } from 'firebase/auth'
-import { auth } from '@/lib/firebase'
+import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth-store'
 import { useSidebarStore } from '@/store/sidebar-store'
 import { Button } from '@/components/ui/button'
@@ -13,7 +12,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -43,7 +41,7 @@ export function Header() {
 
   async function handleLogout() {
     try {
-      await signOut(auth)
+      await supabase.auth.signOut()
       router.push('/login')
       toast.success('Até logo!')
     } catch {
@@ -77,22 +75,20 @@ export function Header() {
         </Button>
 
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="relative h-9 w-9 rounded-full">
-              <Avatar className="h-9 w-9">
-                <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
-            </Button>
+          <DropdownMenuTrigger className="relative h-9 w-9 rounded-full hover:bg-muted flex items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <Avatar className="h-9 w-9">
+              <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+                {initials}
+              </AvatarFallback>
+            </Avatar>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-56" align="end">
-            <DropdownMenuLabel className="font-normal">
+            <div className="px-2 py-1.5 text-sm font-normal">
               <div className="flex flex-col space-y-1">
                 <p className="text-sm font-medium">{user?.name}</p>
                 <p className="text-xs text-muted-foreground">{user?.email}</p>
               </div>
-            </DropdownMenuLabel>
+            </div>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout} className="text-destructive cursor-pointer">
               <LogOut className="mr-2 h-4 w-4" />

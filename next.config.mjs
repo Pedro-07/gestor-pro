@@ -4,8 +4,9 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: 'firebasestorage.googleapis.com',
+        hostname: '*.supabase.co',
       },
+      // Caso utilize domínio customizado de CDN do Supabase, você pode adicionar aqui também
     ],
   },
 }

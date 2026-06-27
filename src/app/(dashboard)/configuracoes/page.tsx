@@ -1,94 +1,65 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { doc, getDoc, setDoc } from 'firebase/firestore'
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
-import { db, storage } from '@/lib/firebase'
+import { useEffect, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { fetchConfig, saveConfig, uploadFile } from '@/lib/database'
 import type { Configuracoes } from '@/types'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
-import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Save, Upload, X, ShoppingBag } from 'lucide-react'
-import { Separator } from '@/components/ui/separator'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { useQueryClient } from '@tanstack/react-query'
+import { useForm } from 'react-hook-form'
+import { toast } from 'sonner'
+import { Loader2, Save, UploadCloud, MessageSquare, Store } from 'lucide-react'
 import Image from 'next/image'
 
-const configSchema = z.object({
-  nomeVendedor: z.string().min(2, 'Nome obrigatório'),
-  telefoneVendedor: z.string().min(10, 'Telefone obrigatório'),
-  templateCobranca: z.string().min(10, 'Template obrigatório'),
-  templateInadimplente: z.string().min(10, 'Template obrigatório'),
-  templateConfirmacaoPagamento: z.string().min(10, 'Template obrigatório'),
-})
-
-const aparenciaSchema = z.object({
-  nomeApp: z.string().min(2, 'Nome deve ter ao menos 2 caracteres').max(30, 'Máximo 30 caracteres'),
-})
-
-type ConfigForm = z.infer<typeof configSchema>
-type AparenciaForm = z.infer<typeof aparenciaSchema>
-
 const defaultTemplates = {
-  templateCobranca: `Olá {nome}! 👋\n\nPassando para lembrar sobre a parcela {numero}/{total} no valor de *{valor}* com vencimento em *{vencimento}*.\n\nPor favor, entre em contato para regularizar. Obrigado! 😊`,
-  templateInadimplente: `Olá {nome}!\n\nGostaríamos de entrar em contato a respeito do seu débito em aberto conosco no valor de *{valor}*.\n\nPor favor, entre em contato para regularizarmos sua situação.\n\nAguardamos seu retorno! 🙏`,
-  templateConfirmacaoPagamento: `Olá {nome}! ✅\n\nConfirmamos o recebimento do pagamento de *{valor}* referente à parcela {numero}/{total}.\n\nObrigado pela confiança! 😊`,
+  templateCobranca: 'Olá {nome}! 👋\n\nPassando para lembrar sobre a parcela {numero}/{total} no valor de *{valor}* com vencimento em *{vencimento}*.\n\nPor favor, entre em contato para regularizar. Obrigado!',
+  templateInadimplente: 'Olá {nome}. Verificamos que há débitos em aberto referentes às suas compras.\n\nTotal em aberto: *{valor}*.\n\nPor favor, entre em contato urgente para negociação.',
+  templateConfirmacaoPagamento: 'Olá {nome}! Recebemos o pagamento da parcela {numero}/{total} no valor de *{valor}*.\n\nObrigado pela preferência! 🎉',
 }
 
 export default function ConfiguracoesPage() {
   const qc = useQueryClient()
-  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [savingAparencia, setSavingAparencia] = useState(false)
-  const [currentLogoUrl, setCurrentLogoUrl] = useState<string | null>(null)
-  const [uploadingLogo, setUploadingLogo] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<ConfigForm>({
-    resolver: zodResolver(configSchema),
-    defaultValues: { ...defaultTemplates, nomeVendedor: '', telefoneVendedor: '' },
-  })
+  const { data: config, isLoading } = useQuery({ queryKey: ['config'], queryFn: fetchConfig })
 
-  const aparenciaForm = useForm<AparenciaForm>({
-    resolver: zodResolver(aparenciaSchema),
-    defaultValues: { nomeApp: 'Minha Loja' },
+  const { register, handleSubmit, reset, watch, setValue } = useForm<Configuracoes>({
+    defaultValues: { ...defaultTemplates, nomeVendedor: '', telefoneVendedor: '', nomeApp: 'Minha Loja' },
   })
 
   useEffect(() => {
-    async function load() {
-      try {
-        const snap = await getDoc(doc(db, 'config', 'geral'))
-        if (snap.exists()) {
-          const data = snap.data() as Configuracoes
-          reset(data as ConfigForm)
-          aparenciaForm.reset({ nomeApp: data.nomeApp || 'Minha Loja' })
-          setCurrentLogoUrl(data.logoUrl ?? null)
-        } else {
-          reset({ nomeVendedor: '', telefoneVendedor: '', ...defaultTemplates })
-        }
-      } catch {
-        toast.error('Erro ao carregar configurações')
-      } finally {
-        setLoading(false)
-      }
+    if (config) {
+      reset({
+        nomeVendedor: config.nomeVendedor ?? '',
+        telefoneVendedor: config.telefoneVendedor ?? '',
+        nomeApp: config.nomeApp ?? 'Minha Loja',
+        templateCobranca: config.templateCobranca || defaultTemplates.templateCobranca,
+        templateInadimplente: config.templateInadimplente || defaultTemplates.templateInadimplente,
+        templateConfirmacaoPagamento: config.templateConfirmacaoPagamento || defaultTemplates.templateConfirmacaoPagamento,
+      })
+      if (config.logoUrl) setPreviewUrl(config.logoUrl)
     }
-    load()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [config, reset])
 
-  async function onSubmitConfig(data: ConfigForm) {
+  async function onSubmit(data: Configuracoes) {
     setSaving(true)
     try {
-      const snap = await getDoc(doc(db, 'config', 'geral'))
-      const existing = snap.exists() ? snap.data() : {}
-      await setDoc(doc(db, 'config', 'geral'), { ...existing, ...data })
+      let finalLogoUrl = config?.logoUrl
+
+      if (logoFile) {
+        const ext = logoFile.name.split('.').pop()
+        const path = `logos/logo_${Date.now()}.${ext}`
+        finalLogoUrl = await uploadFile(path, logoFile)
+      }
+
+      await saveConfig({ ...data, logoUrl: finalLogoUrl })
       qc.invalidateQueries({ queryKey: ['config'] })
       toast.success('Configurações salvas!')
     } catch {
@@ -98,266 +69,60 @@ export default function ConfiguracoesPage() {
     }
   }
 
-  async function onSubmitAparencia(data: AparenciaForm) {
-    setSavingAparencia(true)
-    try {
-      const snap = await getDoc(doc(db, 'config', 'geral'))
-      const existing = snap.exists() ? snap.data() : {}
-      await setDoc(doc(db, 'config', 'geral'), {
-        ...existing,
-        nomeApp: data.nomeApp,
-        logoUrl: currentLogoUrl ?? existing.logoUrl ?? null,
-      })
-      qc.invalidateQueries({ queryKey: ['config'] })
-      toast.success('Aparência atualizada!')
-    } catch {
-      toast.error('Erro ao salvar aparência')
-    } finally {
-      setSavingAparencia(false)
-    }
-  }
-
-  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    if (!file.type.startsWith('image/')) {
-      toast.error('Selecione um arquivo de imagem')
-      return
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('Imagem deve ter no máximo 2MB')
-      return
-    }
-
-    setUploadingLogo(true)
-    setUploadProgress(0)
-
-    try {
-      const storageRef = ref(storage, 'config/logo')
-      const uploadTask = uploadBytesResumable(storageRef, file)
-
-      uploadTask.on(
-        'state_changed',
-        (snap) => {
-          setUploadProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100))
-        },
-        () => {
-          toast.error('Erro ao fazer upload da logo')
-          setUploadingLogo(false)
-        },
-        async () => {
-          const url = await getDownloadURL(uploadTask.snapshot.ref)
-          setCurrentLogoUrl(url)
-          setUploadingLogo(false)
-          setUploadProgress(0)
-          toast.success('Logo carregada! Clique em Salvar Aparência para confirmar.')
-        }
-      )
-    } catch {
-      toast.error('Erro ao fazer upload')
-      setUploadingLogo(false)
-    }
-  }
-
-  async function handleRemoveLogo() {
-    setCurrentLogoUrl(null)
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    )
-  }
+  if (isLoading) return <div className="space-y-4"><Skeleton className="h-48 rounded-xl" /><Skeleton className="h-96 rounded-xl" /></div>
 
   return (
-    <div className="max-w-2xl">
-      <Tabs defaultValue="geral">
-        <TabsList className="mb-6">
-          <TabsTrigger value="geral">Geral</TabsTrigger>
-          <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
-          <TabsTrigger value="aparencia">Aparência</TabsTrigger>
-        </TabsList>
-
-        {/* ─── Aba Geral ─────────────────────────────────────────────────── */}
-        <TabsContent value="geral">
-          <form onSubmit={handleSubmit(onSubmitConfig)} className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Dados do Vendedor</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-1">
-                  <Label>Nome *</Label>
-                  <Input placeholder="Seu nome completo" {...register('nomeVendedor')} />
-                  {errors.nomeVendedor && <p className="text-xs text-destructive">{errors.nomeVendedor.message}</p>}
-                </div>
-                <div className="space-y-1">
-                  <Label>Telefone / WhatsApp *</Label>
-                  <Input placeholder="(11) 99999-9999" {...register('telefoneVendedor')} />
-                  {errors.telefoneVendedor && <p className="text-xs text-destructive">{errors.telefoneVendedor.message}</p>}
-                </div>
-              </CardContent>
-            </Card>
-            <Button type="submit" disabled={saving} className="w-full">
+    <div className="max-w-4xl space-y-4">
+      <form onSubmit={handleSubmit(onSubmit)}>
+        <Tabs defaultValue="geral">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+            <TabsList>
+              <TabsTrigger value="geral"><Store className="h-4 w-4 mr-2" />Geral & Loja</TabsTrigger>
+              <TabsTrigger value="whatsapp"><MessageSquare className="h-4 w-4 mr-2" />Mensagens WhatsApp</TabsTrigger>
+            </TabsList>
+            <Button type="submit" disabled={saving}>
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              Salvar
+              Salvar Alterações
             </Button>
-          </form>
-        </TabsContent>
+          </div>
 
-        {/* ─── Aba WhatsApp ──────────────────────────────────────────────── */}
-        <TabsContent value="whatsapp">
-          <form onSubmit={handleSubmit(onSubmitConfig)} className="space-y-4">
+          <TabsContent value="geral" className="space-y-4">
             <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Templates de Mensagem</CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  Variáveis disponíveis: {'{nome}'}, {'{valor}'}, {'{vencimento}'}, {'{numero}'}, {'{total}'}
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-1">
-                  <Label>Cobrança de Parcela</Label>
-                  <Textarea rows={5} {...register('templateCobranca')} className="font-mono text-xs" />
-                  {errors.templateCobranca && <p className="text-xs text-destructive">{errors.templateCobranca.message}</p>}
-                </div>
-                <Separator />
-                <div className="space-y-1">
-                  <Label>Cobrança de Inadimplente</Label>
-                  <Textarea rows={5} {...register('templateInadimplente')} className="font-mono text-xs" />
-                </div>
-                <Separator />
-                <div className="space-y-1">
-                  <Label>Confirmação de Pagamento</Label>
-                  <Textarea rows={5} {...register('templateConfirmacaoPagamento')} className="font-mono text-xs" />
-                </div>
-              </CardContent>
-            </Card>
-            <Button type="submit" disabled={saving} className="w-full">
-              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              Salvar Templates
-            </Button>
-          </form>
-        </TabsContent>
-
-        {/* ─── Aba Aparência ─────────────────────────────────────────────── */}
-        <TabsContent value="aparencia">
-          <form onSubmit={aparenciaForm.handleSubmit(onSubmitAparencia)} className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Identidade Visual</CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  Personalize o nome e a logo exibidos no sistema. Cada alteração é salva no seu perfil.
-                </p>
-              </CardHeader>
+              <CardHeader><CardTitle>Identidade Visual</CardTitle><CardDescription>Logo e nome que aparecerão no sistema.</CardDescription></CardHeader>
               <CardContent className="space-y-6">
-                {/* App name */}
-                <div className="space-y-1">
-                  <Label>Nome do sistema *</Label>
-                  <Input
-                    placeholder="Minha Loja"
-                    {...aparenciaForm.register('nomeApp')}
-                    maxLength={30}
-                  />
-                  {aparenciaForm.formState.errors.nomeApp && (
-                    <p className="text-xs text-destructive">{aparenciaForm.formState.errors.nomeApp.message}</p>
-                  )}
-                  <p className="text-xs text-muted-foreground">Aparece na barra lateral e na aba do navegador</p>
-                </div>
-
-                <Separator />
-
-                {/* Logo upload */}
-                <div className="space-y-3">
-                  <Label>Logo</Label>
-
-                  {/* Preview */}
-                  <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-xl border-2 border-dashed border-muted-foreground/30 flex items-center justify-center overflow-hidden bg-muted">
-                      {currentLogoUrl ? (
-                        <Image
-                          src={currentLogoUrl}
-                          alt="Logo"
-                          width={64}
-                          height={64}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <ShoppingBag className="h-8 w-8 text-muted-foreground/40" />
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => fileInputRef.current?.click()}
-                          disabled={uploadingLogo}
-                        >
-                          {uploadingLogo ? (
-                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{uploadProgress}%</>
-                          ) : (
-                            <><Upload className="mr-2 h-4 w-4" />Enviar logo</>
-                          )}
-                        </Button>
-                        {currentLogoUrl && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="text-destructive hover:text-destructive"
-                            onClick={handleRemoveLogo}
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        PNG, JPG ou SVG. Máximo 2MB. Recomendado: quadrado (ex: 512×512px)
-                      </p>
-                    </div>
+                <div className="flex items-center gap-6">
+                  <div className="w-24 h-24 bg-muted border-2 border-dashed rounded-xl flex items-center justify-center overflow-hidden relative shrink-0">
+                    {previewUrl ? <Image src={previewUrl} alt="Logo" fill className="object-contain p-1" /> : <UploadCloud className="h-6 w-6 text-muted-foreground opacity-50" />}
+                    <input type="file" accept="image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={(e) => { const file = e.target.files?.[0]; if (file) { setLogoFile(file); setPreviewUrl(URL.createObjectURL(file)) } }} />
                   </div>
-
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/png,image/jpeg,image/svg+xml,image/webp"
-                    className="hidden"
-                    onChange={handleLogoUpload}
-                  />
+                  <div className="space-y-1"><Label>Logo da Loja</Label><p className="text-sm text-muted-foreground">Clique no quadrado para alterar. Recomendado formato quadrado ou redondo (PNG/JPG).</p></div>
                 </div>
-
-                {/* Live preview */}
-                <Separator />
-                <div className="space-y-2">
-                  <Label>Pré-visualização da barra lateral</Label>
-                  <div className="border rounded-lg p-3 bg-card flex items-center gap-2 w-fit">
-                    {currentLogoUrl ? (
-                      <Image src={currentLogoUrl} alt="Logo" width={32} height={32} className="rounded-lg object-cover" />
-                    ) : (
-                      <div className="bg-primary rounded-lg p-1.5">
-                        <ShoppingBag className="h-5 w-5 text-primary-foreground" />
-                      </div>
-                    )}
-                    <span className="font-bold text-sm">
-                      {aparenciaForm.watch('nomeApp') || 'Minha Loja'}
-                    </span>
-                  </div>
-                </div>
+                <div className="space-y-1"><Label>Nome do Aplicativo / Loja</Label><Input {...register('nomeApp')} placeholder="Minha Loja" /></div>
               </CardContent>
             </Card>
+            <Card>
+              <CardHeader><CardTitle>Dados do Vendedor / Loja</CardTitle><CardDescription>Informações usadas para contato interno.</CardDescription></CardHeader>
+              <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1"><Label>Nome do Responsável</Label><Input {...register('nomeVendedor')} placeholder="João Silva" /></div>
+                <div className="space-y-1"><Label>Telefone (WhatsApp)</Label><Input {...register('telefoneVendedor')} placeholder="(11) 99999-9999" /></div>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-            <Button type="submit" disabled={savingAparencia || uploadingLogo} className="w-full">
-              {savingAparencia ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              Salvar Aparência
-            </Button>
-          </form>
-        </TabsContent>
-      </Tabs>
+          <TabsContent value="whatsapp" className="space-y-4">
+            <Card>
+              <CardHeader><CardTitle>Templates de Mensagem</CardTitle><CardDescription>Configure as mensagens enviadas aos clientes. Use as variáveis entre chaves para personalizar automaticamente.</CardDescription></CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-2 text-sm bg-muted p-3 rounded-lg"><p className="font-semibold">Variáveis disponíveis:</p><p className="text-muted-foreground font-mono text-xs">{"{nome}, {valor}, {vencimento}, {numero}, {total}"}</p></div>
+                <div className="space-y-1"><Label>Lembrete de Cobrança</Label><Textarea rows={4} {...register('templateCobranca')} className="font-mono text-sm" /></div>
+                <div className="space-y-1"><Label>Mensagem de Inadimplência</Label><Textarea rows={4} {...register('templateInadimplente')} className="font-mono text-sm" /></div>
+                <div className="space-y-1"><Label>Confirmação de Pagamento</Label><Textarea rows={3} {...register('templateConfirmacaoPagamento')} className="font-mono text-sm" /></div>
+                <Button type="button" variant="outline" size="sm" onClick={() => { setValue('templateCobranca', defaultTemplates.templateCobranca); setValue('templateInadimplente', defaultTemplates.templateInadimplente); setValue('templateConfirmacaoPagamento', defaultTemplates.templateConfirmacaoPagamento) }}>Restaurar Padrões</Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </form>
     </div>
   )
 }

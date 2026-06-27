@@ -15,9 +15,9 @@ export function RouteGuard({ children }: { children: React.ReactNode }) {
     }
   }, [user, loading, router])
 
-  // Se o Firebase ainda está verificando (loading) mas já há um usuário em cache
+  // Se o Supabase ainda está verificando (loading) mas já há um usuário em cache
   // (gravado pelo persist do Zustand), mostra o conteúdo imediatamente — sem spinner.
-  // Se o Firebase voltar sem sessão válida, o useEffect acima redireciona para o login.
+  // Se o Supabase voltar sem sessão válida, o useEffect acima redireciona para o login.
   if (loading && !user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
