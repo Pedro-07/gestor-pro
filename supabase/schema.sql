@@ -128,7 +128,7 @@ CREATE TABLE config (
   "templateCobranca" TEXT NOT NULL DEFAULT '',
   "templateInadimplente" TEXT NOT NULL DEFAULT '',
   "templateConfirmacaoPagamento" TEXT NOT NULL DEFAULT '',
-  "nomeApp" TEXT DEFAULT 'Minha Loja',
+  "nomeApp" TEXT DEFAULT 'Stok Master',
   "logoUrl" TEXT
 );
 

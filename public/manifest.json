@@ -1,6 +1,6 @@
 {
-  "name": "Minha Loja",
-  "short_name": "Minha Loja",
+  "name": "Stok Master",
+  "short_name": "Stok Master",
   "description": "Sistema de gestão para vendedor autônomo de roupas",
   "start_url": "/dashboard",
   "display": "standalone",

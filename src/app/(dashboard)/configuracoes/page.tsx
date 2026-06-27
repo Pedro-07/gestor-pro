@@ -31,7 +31,7 @@ export default function ConfiguracoesPage() {
   const { data: config, isLoading } = useQuery({ queryKey: ['config'], queryFn: fetchConfig })
 
   const { register, handleSubmit, reset, watch, setValue } = useForm<Configuracoes>({
-    defaultValues: { ...defaultTemplates, nomeVendedor: '', telefoneVendedor: '', nomeApp: 'Minha Loja' },
+    defaultValues: { ...defaultTemplates, nomeVendedor: '', telefoneVendedor: '', nomeApp: 'Stok Master' },
   })
 
   useEffect(() => {
@@ -39,7 +39,7 @@ export default function ConfiguracoesPage() {
       reset({
         nomeVendedor: config.nomeVendedor ?? '',
         telefoneVendedor: config.telefoneVendedor ?? '',
-        nomeApp: config.nomeApp ?? 'Minha Loja',
+        nomeApp: config.nomeApp ?? 'Stok Master',
         templateCobranca: config.templateCobranca || defaultTemplates.templateCobranca,
         templateInadimplente: config.templateInadimplente || defaultTemplates.templateInadimplente,
         templateConfirmacaoPagamento: config.templateConfirmacaoPagamento || defaultTemplates.templateConfirmacaoPagamento,
@@ -97,7 +97,7 @@ export default function ConfiguracoesPage() {
                   </div>
                   <div className="space-y-1"><Label>Logo da Loja</Label><p className="text-sm text-muted-foreground">Clique no quadrado para alterar. Recomendado formato quadrado ou redondo (PNG/JPG).</p></div>
                 </div>
-                <div className="space-y-1"><Label>Nome do Aplicativo / Loja</Label><Input {...register('nomeApp')} placeholder="Minha Loja" /></div>
+                <div className="space-y-1"><Label>Nome do Aplicativo / Loja</Label><Input {...register('nomeApp')} placeholder="Stok Master" /></div>
               </CardContent>
             </Card>
             <Card>

@@ -9,7 +9,7 @@ export function useAppConfig() {
   })
 
   return {
-    nomeApp: data?.nomeApp || 'Minha Loja',
+    nomeApp: data?.nomeApp || 'Stok Master',
     logoUrl: data?.logoUrl || null,
   }
 }
