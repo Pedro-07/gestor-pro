@@ -63,7 +63,7 @@ export default function LoginPage() {
               <ShirtIcon className="h-8 w-8 text-primary-foreground" />
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold">Gestor Pro</CardTitle>
+          <CardTitle className="text-2xl font-bold">Stok Master</CardTitle>
           <CardDescription>Faça login usando seu e-mail e senha</CardDescription>
         </CardHeader>
         <CardContent>

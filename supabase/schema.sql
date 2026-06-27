@@ -222,9 +222,9 @@ BEGIN
   INSERT INTO public.perfis (id, nome, nome_loja, telefone, email)
   VALUES (
     NEW.id,
-    NEW.raw_user_meta_data->>'nome',
-    NEW.raw_user_meta_data->>'nome_loja',
-    NEW.raw_user_meta_data->>'telefone',
+    COALESCE(NEW.raw_user_meta_data->>'nome', 'Administrador'),
+    COALESCE(NEW.raw_user_meta_data->>'nome_loja', 'Nova Loja'),
+    COALESCE(NEW.raw_user_meta_data->>'telefone', '000-' || left(NEW.id::text, 8)),
     NEW.email
   );
   
@@ -232,9 +232,9 @@ BEGIN
   INSERT INTO public.config (loja_id, "nomeApp", "nomeVendedor", "telefoneVendedor")
   VALUES (
     NEW.id,
-    NEW.raw_user_meta_data->>'nome_loja',
-    NEW.raw_user_meta_data->>'nome',
-    NEW.raw_user_meta_data->>'telefone'
+    COALESCE(NEW.raw_user_meta_data->>'nome_loja', 'Nova Loja'),
+    COALESCE(NEW.raw_user_meta_data->>'nome', 'Administrador'),
+    COALESCE(NEW.raw_user_meta_data->>'telefone', '000-' || left(NEW.id::text, 8))
   ) ON CONFLICT DO NOTHING;
   
   RETURN NEW;
