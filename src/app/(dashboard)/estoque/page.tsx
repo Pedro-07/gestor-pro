@@ -2,10 +2,11 @@
 
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchProdutos, fetchFornecedores, insertProduto, updateProduto, deleteProduto, uploadFile } from '@/lib/database'
+import { fetchProdutos, fetchFornecedores, insertProduto, updateProduto, deleteProduto, uploadFile, fetchVendas, fetchMovimentacoesByProduto } from '@/lib/database'
 import type { Produto, CategoriaProduto, Fornecedor } from '@/types'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, formatDate } from '@/lib/utils'
 import { useForm, Controller, type Resolver } from 'react-hook-form'
+import { useAppConfig } from '@/hooks/useAppConfig'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
@@ -20,7 +21,9 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { Combobox } from '@/components/shared/combobox'
-import { Plus, Search, MoreVertical, Pencil, Trash2, Package, UploadCloud, Loader2, Image as ImageIcon } from 'lucide-react'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Plus, Search, MoreVertical, Pencil, Trash2, Package, UploadCloud, Loader2, Image as ImageIcon, History, TrendingUp, Info, ArrowUpRight } from 'lucide-react'
 import Image from 'next/image'
 import { BarcodeScanner } from '@/components/shared/barcode-scanner'
 
@@ -47,6 +50,7 @@ const produtoSchema = z.object({
 type ProdutoForm = z.infer<typeof produtoSchema>
 
 export default function EstoquePage() {
+  const { usarTamanhos } = useAppConfig()
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [categoriaFilter, setCategoriaFilter] = useState('todas')
@@ -58,9 +62,17 @@ export default function EstoquePage() {
   const [fotoFile, setFotoFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [isScanning, setIsScanning] = useState(false)
+  const [selectedProdutoDetails, setSelectedProdutoDetails] = useState<Produto | null>(null)
+  const [detalhesDialogOpen, setDetalhesDialogOpen] = useState(false)
 
   const { data: produtos = [], isLoading } = useQuery({ queryKey: ['produtos'], queryFn: fetchProdutos })
   const { data: fornecedores = [] } = useQuery<Fornecedor[]>({ queryKey: ['fornecedores'], queryFn: fetchFornecedores })
+  const { data: vendas = [] } = useQuery({ queryKey: ['vendas'], queryFn: fetchVendas })
+  const { data: movimentacoes = [], isLoading: isLoadingMovs } = useQuery({
+    queryKey: ['movimentacoes', selectedProdutoDetails?.id],
+    queryFn: () => selectedProdutoDetails ? fetchMovimentacoesByProduto(selectedProdutoDetails.id) : Promise.resolve([]),
+    enabled: !!selectedProdutoDetails?.id
+  })
 
   const filtered = produtos.filter((p) => {
     const matchSearch =
@@ -120,8 +132,18 @@ export default function EstoquePage() {
 
       const f = fornecedores.find((x) => x.id === selectedFornecedorId)
 
+      const estoqueFinal = usarTamanhos ? data.estoque : {
+        PP: 0,
+        P: 0,
+        M: data.estoque.M || 0,
+        G: 0,
+        GG: 0,
+        XGG: 0
+      }
+
       const payload = {
         ...data,
+        estoque: estoqueFinal,
         fotoUrl: finalFotoUrl,
         fornecedorId: f?.id ?? undefined,
         fornecedorNome: f?.nome ?? undefined,
@@ -183,63 +205,402 @@ export default function EstoquePage() {
       <p className="text-sm text-muted-foreground">{filtered.length} produto(s) encontrado(s)</p>
 
       {isLoading ? (
-        <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}</div>
+        <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 rounded-lg" />)}</div>
       ) : filtered.length === 0 ? (
         <Card><CardContent className="py-12 text-center text-muted-foreground"><Package className="h-12 w-12 mx-auto mb-3 opacity-20" />Nenhum produto encontrado.</CardContent></Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {filtered.map((p) => {
-            const totalEstoque = Object.values(p.estoque).reduce((a, b) => a + b, 0)
-            return (
-              <Card key={p.id}>
-                <CardContent className="py-3 px-4">
-                  <div className="flex gap-4">
-                    <div className="w-20 h-20 bg-muted rounded-md shrink-0 flex items-center justify-center overflow-hidden border">
-                      {p.fotoUrl ? (
-                        <Image src={p.fotoUrl} alt={p.nome} width={80} height={80} className="object-cover w-full h-full" />
-                      ) : (
-                        <ImageIcon className="h-6 w-6 text-muted-foreground opacity-50" />
-                      )}
+        <>
+          {/* ─── MOBILE: Cards compactos ─── */}
+          <div className="flex flex-col gap-2 sm:hidden">
+            {filtered.map((p) => {
+              const totalEstoque = Object.values(p.estoque).reduce((a, b) => a + b, 0)
+              return (
+                <div key={p.id} className="flex items-center gap-3 border rounded-xl px-3 py-2.5 bg-card shadow-sm">
+                  {/* Ícone ou inicial */}
+                  <div className="h-10 w-10 shrink-0 rounded-lg bg-muted flex items-center justify-center overflow-hidden border">
+                    {p.fotoUrl
+                      ? <Image src={p.fotoUrl} alt={p.nome} width={40} height={40} className="object-cover w-full h-full" />
+                      : <span className="text-base font-bold text-muted-foreground">{p.nome.charAt(0).toUpperCase()}</span>
+                    }
+                  </div>
+
+                  {/* Infos centrais */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold leading-tight truncate">{p.nome}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                      <span className="font-mono text-[10px] text-muted-foreground bg-muted px-1 py-0.5 rounded">{p.codigo}</span>
+                      <span className="text-[10px] text-muted-foreground capitalize">{p.categoria}</span>
                     </div>
-                    <div className="flex-1 min-w-0 flex flex-col justify-between">
-                      <div>
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="font-medium truncate leading-tight">{p.nome}</p>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-6 w-6 -mr-2"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => openEdit(p)}><Pencil className="mr-2 h-4 w-4" />Editar</DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem className="text-destructive" onClick={() => setDeleteDialog(p)}><Trash2 className="mr-2 h-4 w-4" />Excluir</DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{p.codigo}</span>
-                          <span className="text-xs text-muted-foreground capitalize">{p.categoria}</span>
-                        </div>
-                        <p className="text-sm font-bold text-green-600 dark:text-green-400 mt-1">{formatCurrency(p.precoVenda)}</p>
-                      </div>
-                      <div className="flex items-center justify-between mt-2 flex-wrap gap-2">
-                        <div className="flex gap-1 flex-wrap">
-                          {TAMANHOS.map((t) => {
-                            const q = p.estoque[t]
-                            if (q === 0) return null
-                            return <Badge key={t} variant="secondary" className="text-[10px] px-1.5">{t}: {q}</Badge>
-                          })}
-                        </div>
-                        <Badge variant={totalEstoque === 0 ? 'destructive' : totalEstoque < 5 ? 'outline' : 'default'} className="text-[10px]">
-                          {totalEstoque} no estoque
-                        </Badge>
-                      </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs font-bold text-green-600 dark:text-green-400">{formatCurrency(p.precoVenda)}</span>
+                      <Badge variant={totalEstoque === 0 ? 'destructive' : totalEstoque < 5 ? 'outline' : 'default'} className="text-[9px] px-1.5 py-0.5 leading-none">
+                        {usarTamanhos ? `${totalEstoque} un` : `${totalEstoque} un`}
+                      </Badge>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
+
+                  {/* Menu */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-transparent bg-transparent text-sm transition-all hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+                      <MoreVertical className="h-4 w-4" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" sideOffset={4}>
+                      <DropdownMenuItem onClick={() => { setSelectedProdutoDetails(p); setDetalhesDialogOpen(true) }}>
+                        <Info className="mr-2 h-4 w-4 text-primary" />Mais Informações
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => openEdit(p)}>
+                        <Pencil className="mr-2 h-4 w-4" />Editar
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem className="text-destructive" onClick={() => setDeleteDialog(p)}>
+                        <Trash2 className="mr-2 h-4 w-4" />Excluir
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* ─── DESKTOP: Tabela compacta ─── */}
+          <div className="hidden sm:block rounded-xl border overflow-hidden">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/40">
+                    <TableHead className="w-[110px]">Código</TableHead>
+                    <TableHead>Produto</TableHead>
+                    <TableHead className="hidden md:table-cell">Categoria</TableHead>
+                    <TableHead className="text-right hidden lg:table-cell">Custo</TableHead>
+                    <TableHead className="text-right">Venda</TableHead>
+                    <TableHead className={usarTamanhos ? 'text-center' : 'text-right'}>Estoque</TableHead>
+                    <TableHead className="w-[60px] text-center">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((p) => {
+                    const totalEstoque = Object.values(p.estoque).reduce((a, b) => a + b, 0)
+                    return (
+                      <TableRow key={p.id} className="hover:bg-muted/20 group">
+                        <TableCell className="font-mono text-xs font-semibold text-muted-foreground">
+                          {p.codigo}
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium text-sm leading-none">{p.nome}</div>
+                          {p.codigoBarras && <span className="text-[10px] text-muted-foreground font-mono">EAN: {p.codigoBarras}</span>}
+                        </TableCell>
+                        <TableCell className="capitalize text-xs text-muted-foreground hidden md:table-cell">
+                          {p.categoria}
+                        </TableCell>
+                        <TableCell className="text-right text-xs text-muted-foreground font-mono hidden lg:table-cell">
+                          {formatCurrency(p.precoCusto)}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold text-sm text-green-600 dark:text-green-400 font-mono">
+                          {formatCurrency(p.precoVenda)}
+                        </TableCell>
+                        <TableCell className={usarTamanhos ? 'text-center' : 'text-right'}>
+                          {usarTamanhos ? (
+                            <div className="flex items-center justify-center gap-1 flex-wrap max-w-[180px] mx-auto">
+                              {(['PP', 'P', 'M', 'G', 'GG', 'XGG'] as const).map((t) => {
+                                const q = p.estoque[t] ?? 0
+                                if (q === 0) return null
+                                return (
+                                  <Badge key={t} variant="secondary" className="text-[9px] px-1 py-0.5 leading-none">
+                                    {t}:{q}
+                                  </Badge>
+                                )
+                              })}
+                              <Badge variant={totalEstoque === 0 ? 'destructive' : totalEstoque < 5 ? 'outline' : 'default'} className="text-[9px] px-1 py-0.5 leading-none font-bold">
+                                ={totalEstoque}
+                              </Badge>
+                            </div>
+                          ) : (
+                            <Badge variant={totalEstoque === 0 ? 'destructive' : totalEstoque < 5 ? 'outline' : 'default'} className="text-xs font-semibold">
+                              {totalEstoque} un
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center p-1">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-transparent bg-transparent text-sm transition-all hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 opacity-70 group-hover:opacity-100">
+                              <MoreVertical className="h-4 w-4" />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" sideOffset={4}>
+                              <DropdownMenuItem onClick={() => { setSelectedProdutoDetails(p); setDetalhesDialogOpen(true) }}>
+                                <Info className="mr-2 h-4 w-4 text-primary" />Mais Informações
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => openEdit(p)}>
+                                <Pencil className="mr-2 h-4 w-4" />Editar
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem className="text-destructive" onClick={() => setDeleteDialog(p)}>
+                                <Trash2 className="mr-2 h-4 w-4" />Excluir
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </>
       )}
+
+      {/* Detalhes Dialog */}
+      <Dialog open={detalhesDialogOpen} onOpenChange={setDetalhesDialogOpen}>
+        <DialogContent className="max-w-2xl w-full max-h-[90vh] overflow-y-auto p-0 gap-0">
+          {selectedProdutoDetails && (() => {
+            const p = selectedProdutoDetails
+            const totalEstoque = Object.values(p.estoque).reduce((a, b) => a + b, 0)
+            const lucroVal = p.precoVenda - p.precoCusto
+            const margemLucro = p.precoVenda > 0 ? (lucroVal / p.precoVenda) * 100 : 0
+
+            const vendasDoProduto = vendas.filter((v) =>
+              v.itens.some((item) => item.produtoId === p.id)
+            )
+
+            return (
+              <>
+                {/* Header do modal */}
+                <div className="flex items-center gap-4 px-6 pt-6 pb-4 border-b">
+                  {/* Avatar / foto miniatura */}
+                  <div className="h-14 w-14 shrink-0 rounded-xl bg-muted border flex items-center justify-center overflow-hidden">
+                    {p.fotoUrl
+                      ? <Image src={p.fotoUrl} alt={p.nome} width={56} height={56} className="object-cover w-full h-full" />
+                      : <Package className="h-7 w-7 text-muted-foreground/50" />
+                    }
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <DialogTitle className="text-xl font-bold truncate">{p.nome}</DialogTitle>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">Ref: {p.codigo}</span>
+                      <span className="text-xs text-muted-foreground capitalize">{p.categoria}</span>
+                      <Badge variant={totalEstoque === 0 ? 'destructive' : totalEstoque < 5 ? 'outline' : 'default'} className="text-[10px]">
+                        {totalEstoque} un. em estoque
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Abas */}
+                <Tabs defaultValue="geral" className="flex flex-col">
+                  <TabsList className="grid grid-cols-3 w-full rounded-none border-b h-11 bg-transparent px-6 gap-0">
+                    <TabsTrigger value="geral" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent text-xs gap-1.5">
+                      <Info className="h-3.5 w-3.5" />Informações
+                    </TabsTrigger>
+                    <TabsTrigger value="historico" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent text-xs gap-1.5">
+                      <History className="h-3.5 w-3.5" />Movimentação
+                    </TabsTrigger>
+                    <TabsTrigger value="vendas" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent text-xs gap-1.5">
+                      <TrendingUp className="h-3.5 w-3.5" />Vendas ({vendasDoProduto.length})
+                    </TabsTrigger>
+                  </TabsList>
+
+                  {/* ABA INFORMAÇÕES */}
+                  <TabsContent value="geral" className="m-0">
+                    <div className="px-6 py-5 space-y-5">
+
+                      {/* KPIs — Custo / Venda / Margem / Lucro */}
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="rounded-xl border bg-card px-2 py-2.5 text-center">
+                          <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide">Custo</p>
+                          <p className="text-xs md:text-sm font-bold font-mono mt-1 whitespace-nowrap">{formatCurrency(p.precoCusto)}</p>
+                        </div>
+                        <div className="rounded-xl border bg-card px-2 py-2.5 text-center">
+                          <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide">Venda</p>
+                          <p className="text-xs md:text-sm font-bold font-mono mt-1 text-green-600 dark:text-green-400 whitespace-nowrap">{formatCurrency(p.precoVenda)}</p>
+                        </div>
+                        <div className="rounded-xl border bg-card px-2 py-2.5 text-center">
+                          <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide">Lucro</p>
+                          <p className="text-xs md:text-sm font-bold font-mono mt-1 text-blue-600 dark:text-blue-400 whitespace-nowrap">{formatCurrency(lucroVal)}</p>
+                        </div>
+                        <div className="rounded-xl border bg-card px-2 py-2.5 text-center">
+                          <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide">Margem</p>
+                          <p className="text-xs md:text-sm font-bold font-mono mt-1 text-purple-600 dark:text-purple-400 whitespace-nowrap">{margemLucro.toFixed(1)}%</p>
+                        </div>
+                      </div>
+
+                      {/* Detalhes do produto */}
+                      <div className="rounded-xl border bg-card divide-y">
+                        <div className="grid grid-cols-2 divide-x">
+                          <div className="px-4 py-3">
+                            <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide mb-1">Código de Barras (EAN)</p>
+                            <p className="text-sm font-mono font-medium">{p.codigoBarras || '—'}</p>
+                          </div>
+                          <div className="px-4 py-3">
+                            <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide mb-1">Fornecedor</p>
+                            <p className="text-sm font-medium truncate">{p.fornecedorNome || '—'}</p>
+                          </div>
+                        </div>
+                        {p.descricao && (
+                          <div className="px-4 py-3">
+                            <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide mb-1">Descrição</p>
+                            <p className="text-sm leading-relaxed text-foreground/80">{p.descricao}</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Estoque por tamanho */}
+                      {usarTamanhos && (
+                        <div>
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Grade de Estoque</p>
+                          <div className="grid grid-cols-6 gap-2">
+                            {(['PP', 'P', 'M', 'G', 'GG', 'XGG'] as const).map((t) => {
+                              const q = p.estoque[t] ?? 0
+                              return (
+                                <div key={t} className={`rounded-xl border text-center py-3 ${q === 0 ? 'opacity-40 bg-muted/30' : 'bg-card'}`}>
+                                  <p className="text-[10px] font-bold text-muted-foreground">{t}</p>
+                                  <p className={`text-lg font-bold mt-0.5 ${q === 0 ? 'text-muted-foreground' : 'text-foreground'}`}>{q}</p>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Foto grande (se houver) */}
+                      {p.fotoUrl && (
+                        <div>
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Foto do Produto</p>
+                          <div className="relative w-full h-48 rounded-xl border overflow-hidden bg-muted/20">
+                            <Image src={p.fotoUrl} alt={p.nome} fill className="object-contain" />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex justify-end pt-1">
+                        <Button variant="outline" size="sm" onClick={() => { setDetalhesDialogOpen(false); openEdit(p) }}>
+                          <Pencil className="mr-1.5 h-3.5 w-3.5" />Editar Produto
+                        </Button>
+                      </div>
+                    </div>
+                  </TabsContent>
+
+                  {/* ABA MOVIMENTAÇÕES */}
+                  <TabsContent value="historico" className="m-0">
+                    <div className="px-6 py-5">
+                      {isLoadingMovs ? (
+                        <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 rounded-lg" />)}</div>
+                      ) : movimentacoes.length === 0 ? (
+                        <div className="text-center py-12 text-muted-foreground">
+                          <History className="h-10 w-10 mx-auto mb-2 opacity-20" />
+                          <p className="text-sm">Nenhuma movimentação registrada.</p>
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border overflow-hidden">
+                          <div className="max-h-[340px] overflow-y-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow className="bg-muted/40">
+                                  <TableHead className="text-xs">Data</TableHead>
+                                  <TableHead className="text-xs text-center">Tipo</TableHead>
+                                  {usarTamanhos && <TableHead className="text-xs text-center">Tam.</TableHead>}
+                                  <TableHead className="text-xs text-right">Qtd</TableHead>
+                                  <TableHead className="text-xs">Motivo</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {movimentacoes.map((m) => (
+                                  <TableRow key={m.id} className="text-xs">
+                                    <TableCell className="font-mono text-muted-foreground whitespace-nowrap">
+                                      {formatDate(new Date(m.createdAt))}
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <Badge variant={m.tipo === 'entrada' ? 'default' : 'destructive'} className="text-[9px] px-1.5 py-0.5">
+                                        {m.tipo === 'entrada' ? 'Entrada' : 'Saída'}
+                                      </Badge>
+                                    </TableCell>
+                                    {usarTamanhos && (
+                                      <TableCell className="text-center font-bold text-muted-foreground">{m.tamanho}</TableCell>
+                                    )}
+                                    <TableCell className={`text-right font-mono font-bold ${m.tipo === 'entrada' ? 'text-green-600' : 'text-red-500'}`}>
+                                      {m.tipo === 'entrada' ? '+' : '-'}{m.quantidade}
+                                    </TableCell>
+                                    <TableCell className="text-muted-foreground max-w-[180px] truncate" title={m.motivo}>
+                                      {m.motivo}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+
+                  {/* ABA VENDAS */}
+                  <TabsContent value="vendas" className="m-0">
+                    <div className="px-6 py-5">
+                      {vendasDoProduto.length === 0 ? (
+                        <div className="text-center py-12 text-muted-foreground">
+                          <TrendingUp className="h-10 w-10 mx-auto mb-2 opacity-20" />
+                          <p className="text-sm">Nenhuma venda registrada para este produto.</p>
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border overflow-hidden">
+                          <div className="max-h-[340px] overflow-y-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow className="bg-muted/40">
+                                  <TableHead className="text-xs">Data</TableHead>
+                                  <TableHead className="text-xs">Cliente</TableHead>
+                                  {usarTamanhos && <TableHead className="text-xs text-center">Tam.</TableHead>}
+                                  <TableHead className="text-xs text-right">Qtd</TableHead>
+                                  <TableHead className="text-xs text-right">Un.</TableHead>
+                                  <TableHead className="text-xs text-right">Total</TableHead>
+                                  <TableHead className="w-[40px]"></TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {vendasDoProduto.map((v) => {
+                                  const item = v.itens.find((i) => i.produtoId === p.id)
+                                  if (!item) return null
+                                  return (
+                                    <TableRow key={v.id} className="text-xs hover:bg-muted/10">
+                                      <TableCell className="font-mono text-muted-foreground whitespace-nowrap">
+                                        {formatDate(new Date(v.createdAt))}
+                                      </TableCell>
+                                      <TableCell className="font-medium truncate max-w-[120px]" title={v.clienteNome}>
+                                        {v.clienteNome}
+                                      </TableCell>
+                                      {usarTamanhos && (
+                                        <TableCell className="text-center text-muted-foreground">{item.tamanho}</TableCell>
+                                      )}
+                                      <TableCell className="text-right font-semibold font-mono">{item.quantidade}</TableCell>
+                                      <TableCell className="text-right font-mono text-muted-foreground">{formatCurrency(item.precoUnitario)}</TableCell>
+                                      <TableCell className="text-right font-mono font-bold text-green-600 dark:text-green-400">{formatCurrency(item.subtotal)}</TableCell>
+                                      <TableCell className="text-center p-1">
+                                        <a href={`/vendas/${v.id}`} target="_blank" rel="noopener noreferrer"
+                                          className="inline-flex items-center justify-center h-6 w-6 rounded-md hover:bg-muted text-primary" title="Ver venda">
+                                          <ArrowUpRight className="h-3.5 w-3.5" />
+                                        </a>
+                                      </TableCell>
+                                    </TableRow>
+                                  )
+                                })}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+                </Tabs>
+
+                {/* Footer */}
+                <div className="flex justify-end px-6 py-4 border-t bg-muted/20">
+                  <Button variant="outline" size="sm" onClick={() => setDetalhesDialogOpen(false)}>Fechar</Button>
+                </div>
+              </>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
+
 
       {/* Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -314,17 +675,24 @@ export default function EstoquePage() {
             </Card>
 
             {/* Estoque */}
-            <div className="space-y-2">
-              <Label>Quantidade em Estoque por Tamanho</Label>
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                {TAMANHOS.map((t) => (
-                  <div key={t} className="space-y-1 text-center">
-                    <Label className="text-xs">{t}</Label>
-                    <Input type="number" min="0" className="text-center h-9" {...register(`estoque.${t}`)} onFocus={(e) => e.target.select()} />
-                  </div>
-                ))}
+            {usarTamanhos ? (
+              <div className="space-y-2">
+                <Label>Quantidade em Estoque por Tamanho</Label>
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                  {TAMANHOS.map((t) => (
+                    <div key={t} className="space-y-1 text-center">
+                      <Label className="text-xs">{t}</Label>
+                      <Input type="number" min="0" className="text-center h-9" {...register(`estoque.${t}`)} onFocus={(e) => e.target.select()} />
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="space-y-1">
+                <Label>Quantidade em Estoque</Label>
+                <Input type="number" min="0" className="h-9" placeholder="Ex: 10" {...register('estoque.M')} onFocus={(e) => e.target.select()} />
+              </div>
+            )}
 
             <div className="space-y-1"><Label>Descrição / Detalhes</Label><Textarea rows={2} {...register('descricao')} /></div>
 

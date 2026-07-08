@@ -129,7 +129,8 @@ CREATE TABLE config (
   "templateInadimplente" TEXT NOT NULL DEFAULT '',
   "templateConfirmacaoPagamento" TEXT NOT NULL DEFAULT '',
   "nomeApp" TEXT DEFAULT 'Stok Master',
-  "logoUrl" TEXT
+  "logoUrl" TEXT,
+  "usarTamanhos" BOOLEAN DEFAULT TRUE
 );
 
 -- ─── INDEXES ─────────────────────────────────────────────────────────────────

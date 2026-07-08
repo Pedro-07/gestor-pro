@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 import type {
   Cliente, Produto, Venda, Parcela, Fornecedor,
   Configuracoes, FormaPagamento, ItemVenda, Tamanho,
+  MovimentacaoEstoque,
 } from '@/types'
 
 // ─── CLIENTES ────────────────────────────────────────────────────────────────
@@ -138,16 +139,29 @@ export async function executarVenda(params: {
     pagamentos: unknown[]
   }>
 }): Promise<string> {
+  const config = await fetchConfig()
+  const usarTamanhos = config?.usarTamanhos !== false
+
   // 1. Validar estoque
   for (const item of params.itens) {
     const { data: produto, error } = await supabase
       .from('produtos').select('estoque').eq('id', item.produtoId).single()
     if (error) throw new Error(`Produto "${item.produtoNome}" não encontrado`)
-    const disponivel = ((produto.estoque as Record<string, number>)[item.tamanho]) ?? 0
-    if (disponivel < item.quantidade) {
-      throw new Error(
-        `Estoque insuficiente: ${item.produtoNome} tam. ${item.tamanho} — disponível: ${disponivel}, solicitado: ${item.quantidade}`
-      )
+    
+    if (usarTamanhos) {
+      const disponivel = ((produto.estoque as Record<string, number>)[item.tamanho]) ?? 0
+      if (disponivel < item.quantidade) {
+        throw new Error(
+          `Estoque insuficiente: ${item.produtoNome} tam. ${item.tamanho} — disponível: ${disponivel}, solicitado: ${item.quantidade}`
+        )
+      }
+    } else {
+      const totalDisponivel = Object.values(produto.estoque as Record<string, number>).reduce((a, b) => a + b, 0)
+      if (totalDisponivel < item.quantidade) {
+        throw new Error(
+          `Estoque insuficiente: ${item.produtoNome} — disponível: ${totalDisponivel}, solicitado: ${item.quantidade}`
+        )
+      }
     }
   }
 
@@ -175,14 +189,24 @@ export async function executarVenda(params: {
       .from('produtos').select('estoque').eq('id', item.produtoId).single()
     if (produto) {
       const novoEstoque = { ...(produto.estoque as Record<string, number>) }
-      novoEstoque[item.tamanho] = (novoEstoque[item.tamanho] ?? 0) - item.quantidade
+      if (usarTamanhos) {
+        novoEstoque[item.tamanho] = (novoEstoque[item.tamanho] ?? 0) - item.quantidade
+      } else {
+        const totalDisponivel = Object.values(produto.estoque as Record<string, number>).reduce((a, b) => a + b, 0)
+        novoEstoque.PP = 0
+        novoEstoque.P = 0
+        novoEstoque.M = totalDisponivel - item.quantidade
+        novoEstoque.G = 0
+        novoEstoque.GG = 0
+        novoEstoque.XGG = 0
+      }
       await supabase.from('produtos').update({ estoque: novoEstoque }).eq('id', item.produtoId)
     }
     await supabase.from('movimentacoes').insert({
       produtoId: item.produtoId,
       produtoNome: item.produtoNome,
       tipo: 'saida',
-      tamanho: item.tamanho,
+      tamanho: usarTamanhos ? item.tamanho : 'M',
       quantidade: item.quantidade,
       motivo: 'Venda',
       vendaId,
@@ -207,6 +231,9 @@ export async function executarVenda(params: {
  * Cancela uma venda: restaura estoque, cancela parcelas pendentes.
  */
 export async function cancelarVenda(vendaId: string, itens: ItemVenda[], parcelas: Parcela[]) {
+  const config = await fetchConfig()
+  const usarTamanhos = config?.usarTamanhos !== false
+
   // Cancelar venda
   await supabase.from('vendas').update({ status: 'cancelada' }).eq('id', vendaId)
 
@@ -223,13 +250,23 @@ export async function cancelarVenda(vendaId: string, itens: ItemVenda[], parcela
       .from('produtos').select('estoque').eq('id', item.produtoId).single()
     if (produto) {
       const novoEstoque = { ...(produto.estoque as Record<string, number>) }
-      novoEstoque[item.tamanho] = (novoEstoque[item.tamanho] ?? 0) + item.quantidade
+      if (usarTamanhos) {
+        novoEstoque[item.tamanho] = (novoEstoque[item.tamanho] ?? 0) + item.quantidade
+      } else {
+        const totalDisponivel = Object.values(produto.estoque as Record<string, number>).reduce((a, b) => a + b, 0)
+        novoEstoque.PP = 0
+        novoEstoque.P = 0
+        novoEstoque.M = totalDisponivel + item.quantidade
+        novoEstoque.G = 0
+        novoEstoque.GG = 0
+        novoEstoque.XGG = 0
+      }
       await supabase.from('produtos').update({ estoque: novoEstoque }).eq('id', item.produtoId)
       await supabase.from('movimentacoes').insert({
         produtoId: item.produtoId,
         produtoNome: item.produtoNome,
         tipo: 'entrada',
-        tamanho: item.tamanho,
+        tamanho: usarTamanhos ? item.tamanho : 'M',
         quantidade: item.quantidade,
         motivo: 'Cancelamento da venda',
         vendaId,
@@ -251,6 +288,9 @@ export async function editarVenda(params: {
   itensAtualizado: ItemVenda[]
   novoTotal: number
 }) {
+  const config = await fetchConfig()
+  const usarTamanhos = config?.usarTamanhos !== false
+
   // Ajustar estoque para diferenças de quantidade
   for (let i = 0; i < params.itensOriginal.length; i++) {
     const oldItem = params.itensOriginal[i]
@@ -261,9 +301,22 @@ export async function editarVenda(params: {
         .from('produtos').select('estoque').eq('id', oldItem.produtoId).single()
       if (produto) {
         const estoque = { ...(produto.estoque as Record<string, number>) }
-        estoque[oldItem.tamanho] = (estoque[oldItem.tamanho] ?? 0) - delta
-        if (estoque[oldItem.tamanho] < 0) {
-          throw new Error(`Estoque insuficiente para ${oldItem.produtoNome} (${oldItem.tamanho})`)
+        if (usarTamanhos) {
+          estoque[oldItem.tamanho] = (estoque[oldItem.tamanho] ?? 0) - delta
+          if (estoque[oldItem.tamanho] < 0) {
+            throw new Error(`Estoque insuficiente para ${oldItem.produtoNome} (${oldItem.tamanho})`)
+          }
+        } else {
+          const totalDisponivel = Object.values(produto.estoque as Record<string, number>).reduce((a, b) => a + b, 0)
+          estoque.PP = 0
+          estoque.P = 0
+          estoque.M = totalDisponivel - delta
+          estoque.G = 0
+          estoque.GG = 0
+          estoque.XGG = 0
+          if (estoque.M < 0) {
+            throw new Error(`Estoque insuficiente para ${oldItem.produtoNome}`)
+          }
         }
         await supabase.from('produtos').update({ estoque }).eq('id', oldItem.produtoId)
       }
@@ -361,6 +414,16 @@ export async function insertMovimentacao(mov: {
 }) {
   const { error } = await supabase.from('movimentacoes').insert(mov)
   if (error) throw error
+}
+
+export async function fetchMovimentacoesByProduto(produtoId: string): Promise<MovimentacaoEstoque[]> {
+  const { data, error } = await supabase
+    .from('movimentacoes')
+    .select('*')
+    .eq('produtoId', produtoId)
+    .order('createdAt', { ascending: false })
+  if (error) throw error
+  return data as MovimentacaoEstoque[]
 }
 
 // ─── CONFIGURAÇÕES ───────────────────────────────────────────────────────────

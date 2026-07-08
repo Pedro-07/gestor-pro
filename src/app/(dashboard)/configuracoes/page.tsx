@@ -11,7 +11,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { Loader2, Save, UploadCloud, MessageSquare, Store } from 'lucide-react'
 import Image from 'next/image'
@@ -30,8 +31,8 @@ export default function ConfiguracoesPage() {
 
   const { data: config, isLoading } = useQuery({ queryKey: ['config'], queryFn: fetchConfig })
 
-  const { register, handleSubmit, reset, watch, setValue } = useForm<Configuracoes>({
-    defaultValues: { ...defaultTemplates, nomeVendedor: '', telefoneVendedor: '', nomeApp: 'Stok Master' },
+  const { register, handleSubmit, reset, watch, setValue, control } = useForm<Configuracoes>({
+    defaultValues: { ...defaultTemplates, nomeVendedor: '', telefoneVendedor: '', nomeApp: 'Stok Master', usarTamanhos: true },
   })
 
   useEffect(() => {
@@ -43,6 +44,7 @@ export default function ConfiguracoesPage() {
         templateCobranca: config.templateCobranca || defaultTemplates.templateCobranca,
         templateInadimplente: config.templateInadimplente || defaultTemplates.templateInadimplente,
         templateConfirmacaoPagamento: config.templateConfirmacaoPagamento || defaultTemplates.templateConfirmacaoPagamento,
+        usarTamanhos: config.usarTamanhos !== false,
       })
       if (config.logoUrl) setPreviewUrl(config.logoUrl)
     }
@@ -105,6 +107,28 @@ export default function ConfiguracoesPage() {
               <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1"><Label>Nome do Responsável</Label><Input {...register('nomeVendedor')} placeholder="João Silva" /></div>
                 <div className="space-y-1"><Label>Telefone (WhatsApp)</Label><Input {...register('telefoneVendedor')} placeholder="(11) 99999-9999" /></div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader><CardTitle>Preferências do Sistema</CardTitle><CardDescription>Personalize o funcionamento do painel de controle.</CardDescription></CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Grade de Tamanhos no Estoque</Label>
+                  <Controller
+                    name="usarTamanhos"
+                    control={control}
+                    render={({ field }) => (
+                      <Select value={field.value ? "true" : "false"} onValueChange={(v) => field.onChange(v === "true")}>
+                        <SelectTrigger className="w-full md:w-[380px]"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">Ativado (Grade de tamanhos: PP, P, M, G, GG, XGG)</SelectItem>
+                          <SelectItem value="false">Desativado (Estoque único global por produto)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  <p className="text-xs text-muted-foreground">Se desativado, o sistema simplifica o cadastro e as vendas de produtos ocultando as opções de tamanho.</p>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

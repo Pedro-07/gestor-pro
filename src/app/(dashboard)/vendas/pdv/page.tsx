@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchProdutosByNome, fetchClientes, executarVenda } from '@/lib/database'
 import type { Produto, Cliente, Tamanho, FormaPagamento, ItemVenda } from '@/types'
+import { useAppConfig } from '@/hooks/useAppConfig'
 import { formatCurrency } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -39,6 +40,7 @@ interface CartItem {
 }
 
 export default function PDVPage() {
+  const { usarTamanhos } = useAppConfig()
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
@@ -75,19 +77,27 @@ export default function PDVPage() {
       setSearch(code)
       return
     }
-    const tamanho = TAMANHOS.find((t) => (produto.estoque[t] ?? 0) > 0)
+    const tamanho = usarTamanhos
+      ? TAMANHOS.find((t) => (produto.estoque[t] ?? 0) > 0)
+      : 'M'
     if (!tamanho) {
       toast.error(`${produto.nome} — sem estoque disponível`)
       return
     }
+    const totalEstoque = Object.values(produto.estoque).reduce((a, b) => a + b, 0)
+    if (!usarTamanhos && totalEstoque <= 0) {
+      toast.error(`${produto.nome} — sem estoque disponível`)
+      return
+    }
     addToCart(produto, tamanho)
-  }, [produtos]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [produtos, usarTamanhos]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function addToCart(produto: Produto, tamanho: Tamanho) {
-    const estoqueDisp = produto.estoque[tamanho] ?? 0
-    if (estoqueDisp === 0) { toast.error('Sem estoque nesse tamanho'); return }
+    const totalEstoque = Object.values(produto.estoque).reduce((a, b) => a + b, 0)
+    const estoqueDisp = usarTamanhos ? (produto.estoque[tamanho] ?? 0) : totalEstoque
+    if (estoqueDisp === 0) { toast.error(usarTamanhos ? 'Sem estoque nesse tamanho' : 'Sem estoque'); return }
     setCart((prev) => {
-      const idx = prev.findIndex((i) => i.produtoId === produto.id && i.tamanho === tamanho)
+      const idx = prev.findIndex((i) => i.produtoId === produto.id && i.tamanho === (usarTamanhos ? tamanho : 'M'))
       if (idx >= 0) {
         const existing = prev[idx]
         if (existing.quantidade >= estoqueDisp) { toast.error('Estoque insuficiente'); return prev }
@@ -96,7 +106,7 @@ export default function PDVPage() {
         return updated
       }
       return [...prev, {
-        produtoId: produto.id, produtoNome: produto.nome, tamanho,
+        produtoId: produto.id, produtoNome: produto.nome, tamanho: usarTamanhos ? tamanho : 'M',
         quantidade: 1, precoUnitario: produto.precoVenda, subtotal: produto.precoVenda, estoqueDisponivel: estoqueDisp,
       }]
     })
@@ -188,7 +198,7 @@ export default function PDVPage() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input ref={searchRef} placeholder="Buscar produto, código interno ou EAN..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && filtered.length === 1) { const p = filtered[0]; const t = TAMANHOS.find((t) => (p.estoque[t] ?? 0) > 0); if (t) addToCart(p, t) } }} />
+              onKeyDown={(e) => { if (e.key === 'Enter' && filtered.length === 1) { const p = filtered[0]; const t = usarTamanhos ? TAMANHOS.find((t) => (p.estoque[t] ?? 0) > 0) : 'M'; if (t) addToCart(p, t) } }} />
           </div>
           <BarcodeScanner compact onDetected={handleBarcodeDetected} label="Ler código" />
         </div>
@@ -210,16 +220,26 @@ export default function PDVPage() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-1">
-                    {TAMANHOS.map((t) => { const qty = p.estoque[t] ?? 0; return (
-                      <button key={t} disabled={qty === 0} onClick={() => addToCart(p, t)}
-                        className={`text-xs px-2 py-1 rounded border font-semibold transition-colors ${qty === 0
-                          ? 'opacity-25 cursor-not-allowed border-border text-muted-foreground'
-                          : 'hover:bg-primary hover:text-primary-foreground border-primary text-primary cursor-pointer active:scale-95'}`}>
-                        {t}<span className="ml-0.5 font-normal opacity-70">({qty})</span>
-                      </button>
-                    ) })}
-                  </div>
+                  {usarTamanhos ? (
+                    <div className="flex flex-wrap gap-1">
+                      {TAMANHOS.map((t) => { const qty = p.estoque[t] ?? 0; return (
+                        <button key={t} disabled={qty === 0} onClick={() => addToCart(p, t)}
+                          className={`text-xs px-2 py-1 rounded border font-semibold transition-colors ${qty === 0
+                            ? 'opacity-25 cursor-not-allowed border-border text-muted-foreground'
+                            : 'hover:bg-primary hover:text-primary-foreground border-primary text-primary cursor-pointer active:scale-95'}`}>
+                          {t}<span className="ml-0.5 font-normal opacity-70">({qty})</span>
+                        </button>
+                      ) })}
+                    </div>
+                  ) : (
+                    <Button
+                      disabled={Object.values(p.estoque).reduce((a, b) => a + b, 0) === 0}
+                      onClick={() => addToCart(p, 'M')}
+                      className="w-full text-xs py-1 h-8"
+                    >
+                      Adicionar à Venda <span className="ml-1 opacity-70">({Object.values(p.estoque).reduce((a, b) => a + b, 0)})</span>
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             ))}
@@ -243,7 +263,7 @@ export default function PDVPage() {
                 <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
                   {cart.map((item, idx) => (
                     <div key={idx} className="flex items-center gap-2 text-sm">
-                      <div className="flex-1 min-w-0"><p className="font-medium truncate leading-tight">{item.produtoNome}</p><p className="text-xs text-muted-foreground">{item.tamanho} — {formatCurrency(item.precoUnitario)}</p></div>
+                      <div className="flex-1 min-w-0"><p className="font-medium truncate leading-tight">{item.produtoNome}</p><p className="text-xs text-muted-foreground">{usarTamanhos ? `${item.tamanho} — ` : ''}{formatCurrency(item.precoUnitario)}</p></div>
                       <div className="flex items-center gap-1 shrink-0">
                         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateQty(idx, -1)}><Minus className="h-3 w-3" /></Button>
                         <span className="w-5 text-center font-semibold">{item.quantidade}</span>
@@ -290,7 +310,7 @@ export default function PDVPage() {
             )}
             <Separator />
             <div className="space-y-1">
-              {cart.map((item, i) => (<div key={i} className="flex justify-between text-sm"><span className="text-muted-foreground">{item.produtoNome} ({item.tamanho}) ×{item.quantidade}</span><span>{formatCurrency(item.subtotal)}</span></div>))}
+              {cart.map((item, i) => (<div key={i} className="flex justify-between text-sm"><span className="text-muted-foreground">{item.produtoNome}{usarTamanhos ? ` (${item.tamanho})` : ''} ×{item.quantidade}</span><span>{formatCurrency(item.subtotal)}</span></div>))}
               <div className="flex justify-between font-bold text-base pt-1"><span>Total</span><span>{formatCurrency(cartTotal)}</span></div>
             </div>
           </div>

@@ -147,4 +147,5 @@ export interface Configuracoes {
   templateConfirmacaoPagamento: string
   nomeApp?: string
   logoUrl?: string
+  usarTamanhos?: boolean
 }
