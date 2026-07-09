@@ -1,9 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { fetchRelatoriosData, fetchClientes, fetchConfig } from '@/lib/database'
-import type { Venda, Parcela, Produto } from '@/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, isWithinInterval, format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -11,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Download, TrendingUp, Users, Package, BarChart3, CalendarClock, AlertCircle, Boxes, Tags, CreditCard, MessageSquare } from 'lucide-react'
+import { Download, Users, Package, BarChart3, CalendarClock, AlertCircle, Boxes, Tags, CreditCard, MessageSquare } from 'lucide-react'
 
 function getDate(ts: Date | string): Date {
   if (ts instanceof Date) return ts
@@ -690,7 +689,7 @@ export default function RelatoriosPage() {
                     if (cleanPhone.length > 0 && !cleanPhone.startsWith('55') && cleanPhone.length <= 11) {
                       cleanPhone = '55' + cleanPhone
                     }
-                    let mensagem = template
+                    const mensagem = template
                       .replace(/\[nome\]/gi, c.clienteNome)
                       .replace(/\[valor\]/gi, formatCurrency(c.valorPendente))
                     const linkWpp = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(mensagem)}`
