@@ -22,6 +22,18 @@ declare class BarcodeDetector {
   detect(image: ImageBitmapSource): Promise<Array<{ rawValue: string }>>
 }
 
+/** Câmera traseira em alta resolução + autofoco contínuo (ajuda a ler códigos pequenos). */
+function videoConstraints(): MediaTrackConstraints {
+  const c: MediaTrackConstraints = {
+    facingMode: 'environment',
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+  }
+  // focusMode não está nos tipos padrão; aplica quando o navegador suportar
+  ;(c as unknown as { advanced?: unknown[] }).advanced = [{ focusMode: 'continuous' }]
+  return c
+}
+
 export function BarcodeScanner({ onDetected, compact = false, label = 'Ler código' }: BarcodeScannerProps) {
   const [open, setOpen] = useState(false)
   // supported = a câmera pode ser usada (getUserMedia disponível). A LEITURA em
@@ -68,9 +80,7 @@ export function BarcodeScanner({ onDetected, compact = false, label = 'Ler códi
     try {
       // Caminho rápido: BarcodeDetector nativo (Chrome/Edge Android/desktop)
       if ('BarcodeDetector' in window) {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-        })
+        const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints() })
         streamRef.current = stream
         if (!videoRef.current) return
         videoRef.current.srcObject = stream
@@ -105,11 +115,13 @@ export function BarcodeScanner({ onDetected, compact = false, label = 'Ler códi
         BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.CODE_128,
         BarcodeFormat.CODE_39, BarcodeFormat.QR_CODE, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E,
       ])
-      const reader = new BrowserMultiFormatReader(hints)
+      hints.set(DecodeHintType.TRY_HARDER, true) // mais esforço p/ códigos pequenos/borrados
+      // delayBetweenScanAttempts padrão é 500ms (2 leituras/s) — baixamos p/ ~12/s
+      const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 80, delayBetweenScanSuccess: 250 })
       if (!videoRef.current) return
       setScanning(true)
       zxingRef.current = await reader.decodeFromConstraints(
-        { video: { facingMode: 'environment' } },
+        { video: videoConstraints() },
         videoRef.current,
         (result) => { if (result) emit(result.getText()) }
       )
