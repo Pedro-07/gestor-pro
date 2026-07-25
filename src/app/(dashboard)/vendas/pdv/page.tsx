@@ -14,9 +14,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Combobox } from '@/components/shared/combobox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { BarcodeScanner } from '@/components/shared/barcode-scanner'
+import Image from 'next/image'
 import {
-  Search, Plus, Minus, Trash2, ShoppingCart,
+  Search, Trash2, ShoppingCart, MoreVertical,
   Loader2, CheckCircle2, Package,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -38,6 +41,7 @@ interface CartItem {
   precoUnitario: number
   subtotal: number
   estoqueDisponivel: number
+  fotoUrl?: string
 }
 
 export default function PDVPage() {
@@ -114,7 +118,8 @@ export default function PDVPage() {
       }
       return [...prev, {
         produtoId: produto.id, produtoNome: produto.nome, tamanho: tam,
-        quantidade: 1, precoUnitario: produto.precoVenda, subtotal: produto.precoVenda, estoqueDisponivel: estoqueDisp,
+        quantidade: 1, precoUnitario: produto.precoVenda, subtotal: produto.precoVenda,
+        estoqueDisponivel: estoqueDisp, fotoUrl: produto.fotoUrl,
       }]
     })
     const proxQtd = existente ? existente.quantidade + 1 : 1
@@ -123,14 +128,14 @@ export default function PDVPage() {
     searchRef.current?.focus()
   }
 
-  function updateQty(idx: number, delta: number) {
+  function setQty(idx: number, value: number) {
     setCart((prev) => {
       const updated = [...prev]
       const item = updated[idx]
-      const newQty = item.quantidade + delta
-      if (newQty <= 0) { updated.splice(idx, 1); return updated }
-      if (newQty > item.estoqueDisponivel) { toast.error('Estoque insuficiente'); return prev }
-      updated[idx] = { ...item, quantidade: newQty, subtotal: newQty * item.precoUnitario }
+      let q = Math.floor(value || 0)
+      if (q < 1) q = 1
+      if (q > item.estoqueDisponivel) { q = item.estoqueDisponivel; toast.error('Estoque insuficiente') }
+      updated[idx] = { ...item, quantidade: q, subtotal: q * item.precoUnitario }
       return updated
     })
   }
@@ -230,49 +235,65 @@ export default function PDVPage() {
             <Input ref={searchRef} placeholder="Buscar produto, código interno ou EAN..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && filtered.length === 1) { const p = filtered[0]; const t = usarTamanhos ? TAMANHOS.find((t) => (p.estoque[t] ?? 0) > 0) : 'M'; if (t) addToCart(p, t) } }} />
           </div>
-          <BarcodeScanner compact onDetected={handleBarcodeDetected} label="Ler código" />
+          <BarcodeScanner onDetected={handleBarcodeDetected} label="Ler código" className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white border-blue-600 hover:text-white" />
         </div>
-        {produtos.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3"><Package className="h-12 w-12 opacity-30" /><p className="text-sm">Nenhum produto cadastrado no estoque</p></div>
+        {!search.trim() ? (
+          <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3 text-center">
+            <Search className="h-10 w-10 opacity-25" />
+            <p className="text-sm max-w-xs">Busque um produto pelo nome, código ou EAN — ou use o leitor de código de barras.</p>
+          </div>
         ) : filtered.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">Nenhum produto com estoque encontrado</p>
+          <p className="text-sm text-muted-foreground py-10 text-center">Nenhum produto com estoque encontrado para “{search}”.</p>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-            {filtered.map((p) => (
-              <Card key={p.id} className="hover:border-primary/50 transition-colors cursor-default">
-                <CardContent className="p-3 space-y-2">
-                  <div className="flex items-start justify-between gap-1">
-                    <div className="min-w-0">
-                      <p className="font-medium text-sm leading-tight truncate">{p.nome}</p>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <Badge variant="outline" className="text-[10px] font-mono px-1">{p.codigo}</Badge>
-                        <span className="text-sm font-bold text-green-600 dark:text-green-400">{formatCurrency(p.precoVenda)}</span>
-                      </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {filtered.map((p) => {
+              const total = Object.values(p.estoque).reduce((a, b) => a + b, 0)
+              const tamsComEstoque = TAMANHOS.filter((t) => (p.estoque[t] ?? 0) > 0)
+              return (
+                <div key={p.id} className="flex items-center gap-2.5 rounded-xl border bg-card p-2 hover:border-primary/40 transition-colors">
+                  <div className="h-11 w-11 shrink-0 rounded-lg bg-muted border flex items-center justify-center overflow-hidden">
+                    {p.fotoUrl
+                      ? <Image src={p.fotoUrl} alt={p.nome} width={44} height={44} className="object-cover w-full h-full" />
+                      : <Package className="h-5 w-5 text-muted-foreground/40" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate leading-tight">{p.nome}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <Badge variant="outline" className="text-[10px] font-mono px-1">{p.codigo}</Badge>
+                      <span className="text-sm font-bold text-green-600 dark:text-green-400">{formatCurrency(p.precoVenda)}</span>
                     </div>
                   </div>
-                  {usarTamanhos ? (
-                    <div className="flex flex-wrap gap-1">
-                      {TAMANHOS.map((t) => { const qty = p.estoque[t] ?? 0; return (
-                        <button key={t} disabled={qty === 0} onClick={() => addToCart(p, t)}
-                          className={`text-xs px-2 py-1 rounded border font-semibold transition-colors ${qty === 0
-                            ? 'opacity-25 cursor-not-allowed border-border text-muted-foreground'
-                            : 'hover:bg-primary hover:text-primary-foreground border-primary text-primary cursor-pointer active:scale-95'}`}>
-                          {t}<span className="ml-0.5 font-normal opacity-70">({qty})</span>
-                        </button>
-                      ) })}
-                    </div>
+                  {usarTamanhos && tamsComEstoque.length > 1 ? (
+                    <Popover>
+                      <PopoverTrigger
+                        disabled={total === 0}
+                        title="Escolher tamanho"
+                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                      >
+                        <ShoppingCart className="h-4 w-4" />
+                      </PopoverTrigger>
+                      <PopoverContent align="end" className="w-auto p-2">
+                        <p className="text-[10px] text-muted-foreground mb-1.5 px-0.5">Escolha o tamanho</p>
+                        <div className="flex flex-wrap gap-1 max-w-[180px]">
+                          {tamsComEstoque.map((t) => (
+                            <button key={t} onClick={() => addToCart(p, t)}
+                              className="text-xs px-2 py-1 rounded border border-primary text-primary font-semibold hover:bg-primary hover:text-primary-foreground active:scale-95 transition-colors">
+                              {t}<span className="ml-0.5 font-normal opacity-70">({p.estoque[t]})</span>
+                            </button>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   ) : (
-                    <Button
-                      disabled={Object.values(p.estoque).reduce((a, b) => a + b, 0) === 0}
-                      onClick={() => addToCart(p, 'M')}
-                      className="w-full text-xs py-1 h-8"
-                    >
-                      Adicionar à Venda <span className="ml-1 opacity-70">({Object.values(p.estoque).reduce((a, b) => a + b, 0)})</span>
+                    <Button size="icon" disabled={total === 0}
+                      onClick={() => addToCart(p, usarTamanhos ? (tamsComEstoque[0] ?? 'M') : 'M')}
+                      className="h-10 w-10 rounded-xl shrink-0" title="Adicionar ao carrinho">
+                      <ShoppingCart className="h-4 w-4" />
                     </Button>
                   )}
-                </CardContent>
-              </Card>
-            ))}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
@@ -290,16 +311,34 @@ export default function PDVPage() {
               <div className="text-center py-8 text-muted-foreground"><Package className="h-8 w-8 mx-auto mb-2 opacity-30" /><p className="text-xs">Carrinho vazio</p></div>
             ) : (
               <>
-                <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
                   {cart.map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-2 text-sm">
-                      <div className="flex-1 min-w-0"><p className="font-medium truncate leading-tight">{item.produtoNome}</p><p className="text-xs text-muted-foreground">{usarTamanhos ? `${item.tamanho} — ` : ''}{formatCurrency(item.precoUnitario)}</p></div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateQty(idx, -1)}><Minus className="h-3 w-3" /></Button>
-                        <span className="w-5 text-center font-semibold">{item.quantidade}</span>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateQty(idx, 1)}><Plus className="h-3 w-3" /></Button>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => removeItem(idx)}><Trash2 className="h-3 w-3" /></Button>
+                    <div key={idx} className="flex items-center gap-2.5 rounded-xl border p-2">
+                      <div className="h-10 w-10 shrink-0 rounded-lg bg-muted border flex items-center justify-center overflow-hidden">
+                        {item.fotoUrl
+                          ? <Image src={item.fotoUrl} alt={item.produtoNome} width={40} height={40} className="object-cover w-full h-full" />
+                          : <Package className="h-4 w-4 text-muted-foreground/40" />}
                       </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate leading-tight">{item.produtoNome}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {usarTamanhos ? `${item.tamanho} · ` : ''}{formatCurrency(item.precoUnitario)} · <span className="font-semibold text-foreground">{formatCurrency(item.subtotal)}</span>
+                        </p>
+                      </div>
+                      <Input type="number" min={1} max={item.estoqueDisponivel} value={item.quantidade}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => setQty(idx, Number(e.target.value))}
+                        className="w-12 h-8 px-1 text-center shrink-0" />
+                      <DropdownMenu>
+                        <DropdownMenuTrigger className="inline-flex h-8 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+                          <MoreVertical className="h-4 w-4" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem className="text-destructive" onClick={() => removeItem(idx)}>
+                            <Trash2 className="mr-2 h-4 w-4" />Remover
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   ))}
                 </div>

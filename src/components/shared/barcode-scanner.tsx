@@ -14,6 +14,8 @@ interface BarcodeScannerProps {
   compact?: boolean
   /** Label shown on the open button (default: "Ler código") */
   label?: string
+  /** Extra classes for the trigger button (e.g. cor de destaque) */
+  className?: string
 }
 
 declare class BarcodeDetector {
@@ -34,7 +36,7 @@ function videoConstraints(): MediaTrackConstraints {
   return c
 }
 
-export function BarcodeScanner({ onDetected, compact = false, label = 'Ler código' }: BarcodeScannerProps) {
+export function BarcodeScanner({ onDetected, compact = false, label = 'Ler código', className }: BarcodeScannerProps) {
   const [open, setOpen] = useState(false)
   // supported = a câmera pode ser usada (getUserMedia disponível). A LEITURA em
   // si funciona via BarcodeDetector nativo OU, quando ausente, via ZXing (JS).
@@ -155,11 +157,11 @@ export function BarcodeScanner({ onDetected, compact = false, label = 'Ler códi
   }
 
   const trigger = compact ? (
-    <Button type="button" variant="outline" size="icon" className="shrink-0 h-9 w-9" onClick={handleOpen} title={label}>
+    <Button type="button" variant="outline" size="icon" className={`shrink-0 h-9 w-9 ${className ?? ''}`} onClick={handleOpen} title={label}>
       <ScanLine className="h-4 w-4" />
     </Button>
   ) : (
-    <Button type="button" variant="outline" onClick={handleOpen}>
+    <Button type="button" variant="outline" className={className} onClick={handleOpen}>
       <ScanLine className="mr-2 h-4 w-4" />
       {label}
     </Button>
