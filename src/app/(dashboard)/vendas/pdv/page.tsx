@@ -95,23 +95,30 @@ export default function PDVPage() {
   }, [produtos, usarTamanhos]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function addToCart(produto: Produto, tamanho: Tamanho) {
+    const tam: Tamanho = usarTamanhos ? tamanho : 'M'
     const totalEstoque = Object.values(produto.estoque).reduce((a, b) => a + b, 0)
     const estoqueDisp = usarTamanhos ? (produto.estoque[tamanho] ?? 0) : totalEstoque
     if (estoqueDisp === 0) { toast.error(usarTamanhos ? 'Sem estoque nesse tamanho' : 'Sem estoque'); return }
+    // Decide sucesso/erro ANTES do updater para dar feedback correto
+    const existente = cart.find((i) => i.produtoId === produto.id && i.tamanho === tam)
+    if (existente && existente.quantidade >= estoqueDisp) { toast.error('Estoque insuficiente'); return }
+
     setCart((prev) => {
-      const idx = prev.findIndex((i) => i.produtoId === produto.id && i.tamanho === (usarTamanhos ? tamanho : 'M'))
+      const idx = prev.findIndex((i) => i.produtoId === produto.id && i.tamanho === tam)
       if (idx >= 0) {
         const existing = prev[idx]
-        if (existing.quantidade >= estoqueDisp) { toast.error('Estoque insuficiente'); return prev }
+        if (existing.quantidade >= estoqueDisp) return prev
         const updated = [...prev]
         updated[idx] = { ...existing, quantidade: existing.quantidade + 1, subtotal: (existing.quantidade + 1) * existing.precoUnitario }
         return updated
       }
       return [...prev, {
-        produtoId: produto.id, produtoNome: produto.nome, tamanho: usarTamanhos ? tamanho : 'M',
+        produtoId: produto.id, produtoNome: produto.nome, tamanho: tam,
         quantidade: 1, precoUnitario: produto.precoVenda, subtotal: produto.precoVenda, estoqueDisponivel: estoqueDisp,
       }]
     })
+    const proxQtd = existente ? existente.quantidade + 1 : 1
+    toast.success(`${produto.nome} adicionado${usarTamanhos ? ` (${tam})` : ''} — ${proxQtd}× no carrinho`)
     setSearch('')
     searchRef.current?.focus()
   }
@@ -305,6 +312,26 @@ export default function PDVPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Barra de carrinho fixa (mobile) — sempre visível acima do menu inferior */}
+      {cart.length > 0 && (
+        <div className="fixed inset-x-0 bottom-16 z-30 px-3 lg:hidden">
+          <div className="flex items-center gap-3 rounded-xl border bg-card shadow-lg px-4 py-2.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="relative shrink-0">
+                <ShoppingCart className="h-5 w-5" />
+                <span className="absolute -top-1.5 -right-1.5 h-4 min-w-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
+                  {cart.reduce((s, i) => s + i.quantidade, 0)}
+                </span>
+              </div>
+              <span className="font-bold text-base truncate">{formatCurrency(cartTotal)}</span>
+            </div>
+            <Button className="ml-auto shrink-0" size="sm" onClick={() => setCheckoutOpen(true)}>
+              Finalizar
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Checkout Dialog */}
       <Dialog open={checkoutOpen} onOpenChange={setCheckoutOpen}>
