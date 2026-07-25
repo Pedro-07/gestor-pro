@@ -46,7 +46,7 @@ export default function RelatoriosPage() {
     return <div className="space-y-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-48 rounded-xl" />)}</div>
   }
 
-  const { vendas = [], parcelas = [], produtos = [] } = data ?? {}
+  const { vendas = [], parcelas = [], produtos = [], acertos = [] } = data ?? {}
   const interval = getPeriodoInterval(periodo)
 
   const vendasPeriodo = vendas.filter((v) =>
@@ -55,12 +55,17 @@ export default function RelatoriosPage() {
 
   const totalVendasPeriodo = vendasPeriodo.reduce((acc, v) => acc + v.total, 0)
 
+  // Recebido de consignação no período (acertos pagos)
+  const recebidoConsignacaoPeriodo = acertos
+    .filter((a) => isWithinInterval(getDate(a.dataAcerto), interval))
+    .reduce((s, a) => s + (a.valorRecebido ?? 0), 0)
+
   const totalRecebidoPeriodo = parcelas.reduce((acc, p) => {
     const pagsPeriodo = (p.pagamentos ?? []).filter((pg) =>
       isWithinInterval(getDate(pg.dataPagamento), interval)
     )
     return acc + pagsPeriodo.reduce((s, pg) => s + pg.valor, 0)
-  }, 0)
+  }, 0) + recebidoConsignacaoPeriodo
 
   const clienteMap: Record<string, { nome: string; total: number; vendas: number }> = {}
   vendasPeriodo.forEach((v) => {
@@ -85,10 +90,14 @@ export default function RelatoriosPage() {
     date.setMonth(date.getMonth() - (5 - i))
     const start = startOfMonth(date)
     const end = endOfMonth(date)
-    const entradas = parcelas.reduce((acc, p) => {
+    const entradasParcelas = parcelas.reduce((acc, p) => {
       const pags = (p.pagamentos ?? []).filter((pg) => isWithinInterval(getDate(pg.dataPagamento), { start, end }))
       return acc + pags.reduce((s, pg) => s + pg.valor, 0)
     }, 0)
+    const entradasConsignacao = acertos
+      .filter((a) => isWithinInterval(getDate(a.dataAcerto), { start, end }))
+      .reduce((s, a) => s + (a.valorRecebido ?? 0), 0)
+    const entradas = entradasParcelas + entradasConsignacao
     const vendas_ = vendas.filter((v) => isWithinInterval(getDate(v.createdAt), { start, end }))
       .reduce((acc, v) => acc + v.total, 0)
     return { mes: format(date, 'MMM/yy', { locale: ptBR }), entradas, vendas: vendas_ }

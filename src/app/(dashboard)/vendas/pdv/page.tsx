@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchProdutosByNome, fetchClientes, executarVenda } from '@/lib/database'
+import { fetchProdutosByNome, fetchClientes, executarVenda, criarConsignacao } from '@/lib/database'
 import type { Produto, Cliente, Tamanho, FormaPagamento, ItemVenda } from '@/types'
 import { useAppConfig } from '@/hooks/useAppConfig'
 import { formatCurrency } from '@/lib/utils'
@@ -27,6 +27,7 @@ const FP_OPTIONS: { value: FormaPagamento; label: string }[] = [
   { value: 'pix', label: 'PIX' },
   { value: 'cartao', label: 'Cartão' },
   { value: 'promissoria', label: 'Nota Promissória' },
+  { value: 'consignado', label: 'Consignado' },
 ]
 
 interface CartItem {
@@ -51,6 +52,7 @@ export default function PDVPage() {
   const [entrada, setEntrada] = useState(0)
   const [saving, setSaving] = useState(false)
   const [successDialog, setSuccessDialog] = useState(false)
+  const [ultimaOperacao, setUltimaOperacao] = useState<'venda' | 'consignacao'>('venda')
   const searchRef = useRef<HTMLInputElement>(null)
 
   const { data: produtos = [] } = useQuery({ queryKey: ['produtos'], queryFn: fetchProdutosByNome })
@@ -139,6 +141,26 @@ export default function PDVPage() {
         produtoId, produtoNome, tamanho, quantidade, precoUnitario, subtotal,
       }))
 
+      // Consignação: entrega ao lojista (baixa estoque, não fatura até o acerto)
+      if (formaPagamento === 'consignado') {
+        await criarConsignacao({
+          clienteId, clienteNome: cliente.nome, clienteCidade: cliente.cidade,
+          clienteTelefone: cliente.telefone ?? '',
+          itens: cart.map(({ produtoId, produtoNome, tamanho, quantidade, precoUnitario }) => ({
+            produtoId, produtoNome, tamanho, quantidade, precoUnitario,
+          })),
+        })
+
+        qc.invalidateQueries({ queryKey: ['consignacoes'] })
+        qc.invalidateQueries({ queryKey: ['produtos'] })
+        qc.invalidateQueries({ queryKey: ['dashboard'] })
+
+        setCart([]); setClienteId(''); setFormaPagamento('dinheiro'); setEntrada(0); setNumeroParcelas(2)
+        setUltimaOperacao('consignacao')
+        setCheckoutOpen(false); setSuccessDialog(true)
+        return
+      }
+
       // Montar parcelas se promissória
       let parcelas: Array<{
         clienteNome: string; clienteTelefone: string; numero: number; totalParcelas: number;
@@ -184,6 +206,7 @@ export default function PDVPage() {
       qc.invalidateQueries({ queryKey: ['dashboard'] })
 
       setCart([]); setClienteId(''); setFormaPagamento('dinheiro'); setEntrada(0); setNumeroParcelas(2)
+      setUltimaOperacao('venda')
       setCheckoutOpen(false); setSuccessDialog(true)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao finalizar venda')
@@ -308,6 +331,13 @@ export default function PDVPage() {
                 {entrada > 0 && <p className="col-span-2 text-xs text-muted-foreground">{numeroParcelas}× de {formatCurrency((cartTotal - entrada) / numeroParcelas)} mensais</p>}
               </div>
             )}
+            {formaPagamento === 'consignado' && (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-muted-foreground space-y-1">
+                <p className="font-semibold text-amber-600 dark:text-amber-400">Entrega em consignação</p>
+                <p>As peças saem do seu estoque agora, mas <strong>nada é faturado</strong>. O lojista paga só o que vender (ao preço de repasse = preço de venda) e devolve o restante no acerto de contas, em <strong>Consignações</strong>.</p>
+                <p className="pt-1">Valor potencial (se vender tudo): <strong className="text-foreground font-mono">{formatCurrency(cartTotal)}</strong></p>
+              </div>
+            )}
             <Separator />
             <div className="space-y-1">
               {cart.map((item, i) => (<div key={i} className="flex justify-between text-sm"><span className="text-muted-foreground">{item.produtoNome}{usarTamanhos ? ` (${item.tamanho})` : ''} ×{item.quantidade}</span><span>{formatCurrency(item.subtotal)}</span></div>))}
@@ -316,7 +346,7 @@ export default function PDVPage() {
           </div>
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button variant="outline" onClick={() => setCheckoutOpen(false)}>Voltar</Button>
-            <Button onClick={handleFinalizarVenda} disabled={saving || !clienteId}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirmar Venda</Button>
+            <Button onClick={handleFinalizarVenda} disabled={saving || !clienteId}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{formaPagamento === 'consignado' ? 'Confirmar Consignação' : 'Confirmar Venda'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -326,10 +356,10 @@ export default function PDVPage() {
         <DialogContent className="max-w-xs text-center">
           <div className="space-y-3 py-4">
             <CheckCircle2 className="h-14 w-14 text-green-500 mx-auto" />
-            <h2 className="text-xl font-bold">Venda realizada!</h2>
-            <p className="text-sm text-muted-foreground">A venda foi registrada com sucesso.</p>
+            <h2 className="text-xl font-bold">{ultimaOperacao === 'consignacao' ? 'Consignação registrada!' : 'Venda realizada!'}</h2>
+            <p className="text-sm text-muted-foreground">{ultimaOperacao === 'consignacao' ? 'As peças foram entregues. Faça o acerto em Consignações quando o lojista prestar contas.' : 'A venda foi registrada com sucesso.'}</p>
           </div>
-          <DialogFooter><Button className="w-full" onClick={() => setSuccessDialog(false)}>Nova Venda</Button></DialogFooter>
+          <DialogFooter><Button className="w-full" onClick={() => setSuccessDialog(false)}>{ultimaOperacao === 'consignacao' ? 'Nova Operação' : 'Nova Venda'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

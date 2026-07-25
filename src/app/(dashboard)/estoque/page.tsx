@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchProdutos, fetchFornecedores, insertProduto, updateProduto, deleteProduto, uploadFile, fetchVendas, fetchMovimentacoesByProduto } from '@/lib/database'
-import type { Produto, CategoriaProduto, Fornecedor } from '@/types'
+import { fetchProdutos, fetchFornecedores, insertProduto, updateProduto, deleteProduto, uploadFile, fetchVendas, fetchMovimentacoesByProduto, insertMovimentacao } from '@/lib/database'
+import type { Produto, CategoriaProduto, Fornecedor, Tamanho } from '@/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useForm, Controller, type Resolver } from 'react-hook-form'
 import { useAppConfig } from '@/hooks/useAppConfig'
@@ -64,6 +64,11 @@ export default function EstoquePage() {
   const [isScanning, setIsScanning] = useState(false)
   const [selectedProdutoDetails, setSelectedProdutoDetails] = useState<Produto | null>(null)
   const [detalhesDialogOpen, setDetalhesDialogOpen] = useState(false)
+  // Reconhecimento de código de barras já cadastrado (entrada rápida de estoque)
+  const [codigoExistente, setCodigoExistente] = useState<Produto | null>(null)
+  const [entradaTamanho, setEntradaTamanho] = useState<Tamanho>('M')
+  const [entradaQtd, setEntradaQtd] = useState(1)
+  const [savingEntrada, setSavingEntrada] = useState(false)
 
   const { data: produtos = [], isLoading } = useQuery({ queryKey: ['produtos'], queryFn: fetchProdutos })
   const { data: fornecedores = [] } = useQuery<Fornecedor[]>({ queryKey: ['fornecedores'], queryFn: fetchFornecedores })
@@ -174,6 +179,49 @@ export default function EstoquePage() {
       setDeleteDialog(null)
     } catch {
       toast.error('Erro ao excluir')
+    }
+  }
+
+  // Ao bipar no cadastro: se o código já pertence a um produto, reconhece-o e
+  // oferece dar entrada de estoque em vez de criar um duplicado.
+  function handleScanCadastro(code: string) {
+    setIsScanning(false)
+    const existente = produtos.find((p) => p.codigoBarras === code && p.id !== editingProduto?.id)
+    if (existente) {
+      setEntradaTamanho('M')
+      setEntradaQtd(1)
+      setCodigoExistente(existente)
+      return
+    }
+    setValue('codigoBarras', code)
+    toast.success('Código lido!')
+  }
+
+  async function confirmarEntradaEstoque() {
+    if (!codigoExistente) return
+    const qtd = Math.max(1, Math.floor(entradaQtd || 0))
+    const tam: Tamanho = usarTamanhos ? entradaTamanho : 'M'
+    setSavingEntrada(true)
+    try {
+      const novoEstoque = { ...codigoExistente.estoque }
+      novoEstoque[tam] = (novoEstoque[tam] ?? 0) + qtd
+      await updateProduto(codigoExistente.id, { estoque: novoEstoque })
+      await insertMovimentacao({
+        produtoId: codigoExistente.id,
+        produtoNome: codigoExistente.nome,
+        tipo: 'entrada',
+        tamanho: tam,
+        quantidade: qtd,
+        motivo: 'Entrada por leitura de código',
+      })
+      qc.invalidateQueries({ queryKey: ['produtos'] })
+      toast.success(`+${qtd} un. em estoque — ${codigoExistente.nome}`)
+      setCodigoExistente(null)
+      setDialogOpen(false)
+    } catch {
+      toast.error('Erro ao dar entrada de estoque')
+    } finally {
+      setSavingEntrada(false)
     }
   }
 
@@ -640,7 +688,7 @@ export default function EstoquePage() {
               </div>
               {isScanning && (
                 <div className="sm:col-span-2 border p-2 rounded-lg bg-black/5">
-                  <BarcodeScanner compact onDetected={(code) => { setValue('codigoBarras', code); setIsScanning(false); toast.success('Código lido!') }} />
+                  <BarcodeScanner compact onDetected={handleScanCadastro} />
                 </div>
               )}
               <div className="space-y-1 sm:col-span-2"><Label>Nome do Produto *</Label><Input {...register('nome')} placeholder="Ex: Camiseta Básica Algodão" />{errors.nome && <p className="text-xs text-destructive">{errors.nome.message}</p>}</div>
@@ -701,6 +749,58 @@ export default function EstoquePage() {
               <Button type="submit" disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Salvar Produto</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reconhecimento de código já cadastrado — entrada rápida de estoque */}
+      <Dialog open={!!codigoExistente} onOpenChange={(v) => { if (!v) setCodigoExistente(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Produto já cadastrado</DialogTitle></DialogHeader>
+          {codigoExistente && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 rounded-xl border bg-muted/20 p-3">
+                <div className="h-12 w-12 shrink-0 rounded-lg bg-muted border flex items-center justify-center overflow-hidden">
+                  {codigoExistente.fotoUrl
+                    ? <Image src={codigoExistente.fotoUrl} alt={codigoExistente.nome} width={48} height={48} className="object-cover w-full h-full" />
+                    : <Package className="h-6 w-6 text-muted-foreground/50" />}
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-sm truncate">{codigoExistente.nome}</p>
+                  <p className="text-[11px] text-muted-foreground font-mono">Ref: {codigoExistente.codigo} · EAN: {codigoExistente.codigoBarras}</p>
+                  <p className="text-[11px] text-muted-foreground">Em estoque: {Object.values(codigoExistente.estoque).reduce((a, b) => a + b, 0)} un.</p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Esse código de barras já existe. Confirme o item e a quantidade para dar entrada no estoque.
+              </p>
+              <div className={usarTamanhos ? 'grid grid-cols-2 gap-3' : ''}>
+                {usarTamanhos && (
+                  <div className="space-y-1">
+                    <Label className="text-xs">Tamanho</Label>
+                    <Select value={entradaTamanho} onValueChange={(v) => setEntradaTamanho(v as Tamanho)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {TAMANHOS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div className="space-y-1">
+                  <Label className="text-xs">Quantidade a adicionar</Label>
+                  <Input type="number" min="1" value={entradaQtd} onFocus={(e) => e.target.select()}
+                    onChange={(e) => setEntradaQtd(Number(e.target.value))} />
+                </div>
+              </div>
+              <DialogFooter className="flex-col sm:flex-row gap-2">
+                <Button variant="outline" onClick={() => { setValue('codigoBarras', codigoExistente.codigoBarras ?? ''); setCodigoExistente(null) }}>
+                  Só preencher o código
+                </Button>
+                <Button onClick={confirmarEntradaEstoque} disabled={savingEntrada || entradaQtd < 1}>
+                  {savingEntrada && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Dar entrada
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

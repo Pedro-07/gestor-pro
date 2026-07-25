@@ -86,7 +86,7 @@ export default function VendaDetalhePage() {
     if (!data?.venda) return
     setCanceling(true)
     try {
-      await cancelarVenda(data.venda.id, data.venda.itens, data.parcelas ?? [])
+      await cancelarVenda(data.venda.id)
       qc.invalidateQueries({ queryKey: ['venda', id] }); qc.invalidateQueries({ queryKey: ['vendas'] })
       qc.invalidateQueries({ queryKey: ['produtos'] }); qc.invalidateQueries({ queryKey: ['parcelas'] }); qc.invalidateQueries({ queryKey: ['dashboard'] })
       toast.success('Venda cancelada. Estoque restaurado.'); setCancelDialog(false)
