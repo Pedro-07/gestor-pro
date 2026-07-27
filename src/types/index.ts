@@ -81,7 +81,9 @@ export interface MovimentacaoEstoque {
 }
 
 // ─── VENDA ───────────────────────────────────────────────────────────────────
-export type FormaPagamento = 'dinheiro' | 'pix' | 'cartao' | 'promissoria'
+export type FormaPagamento = 'dinheiro' | 'pix' | 'cartao' | 'promissoria' | 'consignado'
+/** Formas de pagamento que representam recebimento efetivo (usadas no acerto de consignação). */
+export type FormaPagamentoRecebimento = 'dinheiro' | 'pix' | 'cartao'
 export type StatusVenda = 'paga' | 'parcialmente_paga' | 'pendente' | 'atrasada' | 'cancelada'
 
 export interface ItemVenda {
@@ -138,6 +140,61 @@ export interface Parcela {
   updatedAt: string
 }
 
+// ─── CONSIGNAÇÃO ─────────────────────────────────────────────────────────────
+export type StatusConsignacao = 'aberta' | 'fechada' | 'cancelada'
+
+export interface ItemConsignacao {
+  produtoId: string
+  produtoNome: string
+  tamanho: Tamanho
+  /** Quantidade entregue ao lojista. */
+  quantidade: number
+  /** Preço de repasse por unidade (= precoVenda do produto no momento da entrega). */
+  precoUnitario: number
+  /** Quantidade já acertada como vendida (paga). */
+  vendidas: number
+  /** Quantidade já devolvida ao estoque. */
+  devolvidas: number
+}
+
+export interface ItemAcerto {
+  produtoId: string
+  produtoNome: string
+  tamanho: Tamanho
+  vendidas: number
+  devolvidas: number
+  precoUnitario: number
+}
+
+export interface AcertoConsignacao {
+  id: string
+  consignacaoId: string
+  clienteId: string
+  clienteNome: string
+  itens: ItemAcerto[]
+  valorRecebido: number
+  formaPagamento: FormaPagamentoRecebimento
+  observacoes?: string
+  dataAcerto: string
+  createdAt: string
+}
+
+export interface Consignacao {
+  id: string
+  clienteId: string
+  clienteNome: string
+  clienteCidade: string
+  clienteTelefone: string
+  itens: ItemConsignacao[]
+  totalEntregue: number
+  totalRecebido: number
+  status: StatusConsignacao
+  observacoes?: string
+  dataEntrega: string
+  createdAt: string
+  updatedAt: string
+}
+
 // ─── CONFIGURAÇÕES ───────────────────────────────────────────────────────────
 export interface Configuracoes {
   nomeVendedor: string
@@ -147,4 +204,5 @@ export interface Configuracoes {
   templateConfirmacaoPagamento: string
   nomeApp?: string
   logoUrl?: string
+  usarTamanhos?: boolean
 }

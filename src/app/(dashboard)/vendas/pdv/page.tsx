@@ -2,8 +2,9 @@
 
 import { useState, useRef, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchProdutosByNome, fetchClientes, executarVenda } from '@/lib/database'
+import { fetchProdutosByNome, fetchClientes, executarVenda, criarConsignacao } from '@/lib/database'
 import type { Produto, Cliente, Tamanho, FormaPagamento, ItemVenda } from '@/types'
+import { useAppConfig } from '@/hooks/useAppConfig'
 import { formatCurrency } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,9 +14,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Combobox } from '@/components/shared/combobox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { BarcodeScanner } from '@/components/shared/barcode-scanner'
+import Image from 'next/image'
 import {
-  Search, Plus, Minus, Trash2, ShoppingCart,
+  Search, Trash2, ShoppingCart, MoreVertical,
   Loader2, CheckCircle2, Package,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -26,6 +30,7 @@ const FP_OPTIONS: { value: FormaPagamento; label: string }[] = [
   { value: 'pix', label: 'PIX' },
   { value: 'cartao', label: 'Cartão' },
   { value: 'promissoria', label: 'Nota Promissória' },
+  { value: 'consignado', label: 'Consignado' },
 ]
 
 interface CartItem {
@@ -36,9 +41,11 @@ interface CartItem {
   precoUnitario: number
   subtotal: number
   estoqueDisponivel: number
+  fotoUrl?: string
 }
 
 export default function PDVPage() {
+  const { usarTamanhos } = useAppConfig()
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
@@ -49,6 +56,7 @@ export default function PDVPage() {
   const [entrada, setEntrada] = useState(0)
   const [saving, setSaving] = useState(false)
   const [successDialog, setSuccessDialog] = useState(false)
+  const [ultimaOperacao, setUltimaOperacao] = useState<'venda' | 'consignacao'>('venda')
   const searchRef = useRef<HTMLInputElement>(null)
 
   const { data: produtos = [] } = useQuery({ queryKey: ['produtos'], queryFn: fetchProdutosByNome })
@@ -75,43 +83,59 @@ export default function PDVPage() {
       setSearch(code)
       return
     }
-    const tamanho = TAMANHOS.find((t) => (produto.estoque[t] ?? 0) > 0)
+    const tamanho = usarTamanhos
+      ? TAMANHOS.find((t) => (produto.estoque[t] ?? 0) > 0)
+      : 'M'
     if (!tamanho) {
       toast.error(`${produto.nome} — sem estoque disponível`)
       return
     }
+    const totalEstoque = Object.values(produto.estoque).reduce((a, b) => a + b, 0)
+    if (!usarTamanhos && totalEstoque <= 0) {
+      toast.error(`${produto.nome} — sem estoque disponível`)
+      return
+    }
     addToCart(produto, tamanho)
-  }, [produtos]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [produtos, usarTamanhos]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function addToCart(produto: Produto, tamanho: Tamanho) {
-    const estoqueDisp = produto.estoque[tamanho] ?? 0
-    if (estoqueDisp === 0) { toast.error('Sem estoque nesse tamanho'); return }
+    const tam: Tamanho = usarTamanhos ? tamanho : 'M'
+    const totalEstoque = Object.values(produto.estoque).reduce((a, b) => a + b, 0)
+    const estoqueDisp = usarTamanhos ? (produto.estoque[tamanho] ?? 0) : totalEstoque
+    if (estoqueDisp === 0) { toast.error(usarTamanhos ? 'Sem estoque nesse tamanho' : 'Sem estoque'); return }
+    // Decide sucesso/erro ANTES do updater para dar feedback correto
+    const existente = cart.find((i) => i.produtoId === produto.id && i.tamanho === tam)
+    if (existente && existente.quantidade >= estoqueDisp) { toast.error('Estoque insuficiente'); return }
+
     setCart((prev) => {
-      const idx = prev.findIndex((i) => i.produtoId === produto.id && i.tamanho === tamanho)
+      const idx = prev.findIndex((i) => i.produtoId === produto.id && i.tamanho === tam)
       if (idx >= 0) {
         const existing = prev[idx]
-        if (existing.quantidade >= estoqueDisp) { toast.error('Estoque insuficiente'); return prev }
+        if (existing.quantidade >= estoqueDisp) return prev
         const updated = [...prev]
         updated[idx] = { ...existing, quantidade: existing.quantidade + 1, subtotal: (existing.quantidade + 1) * existing.precoUnitario }
         return updated
       }
       return [...prev, {
-        produtoId: produto.id, produtoNome: produto.nome, tamanho,
-        quantidade: 1, precoUnitario: produto.precoVenda, subtotal: produto.precoVenda, estoqueDisponivel: estoqueDisp,
+        produtoId: produto.id, produtoNome: produto.nome, tamanho: tam,
+        quantidade: 1, precoUnitario: produto.precoVenda, subtotal: produto.precoVenda,
+        estoqueDisponivel: estoqueDisp, fotoUrl: produto.fotoUrl,
       }]
     })
+    const proxQtd = existente ? existente.quantidade + 1 : 1
+    toast.success(`${produto.nome} adicionado${usarTamanhos ? ` (${tam})` : ''} — ${proxQtd}× no carrinho`)
     setSearch('')
     searchRef.current?.focus()
   }
 
-  function updateQty(idx: number, delta: number) {
+  function setQty(idx: number, value: number) {
     setCart((prev) => {
       const updated = [...prev]
       const item = updated[idx]
-      const newQty = item.quantidade + delta
-      if (newQty <= 0) { updated.splice(idx, 1); return updated }
-      if (newQty > item.estoqueDisponivel) { toast.error('Estoque insuficiente'); return prev }
-      updated[idx] = { ...item, quantidade: newQty, subtotal: newQty * item.precoUnitario }
+      let q = Math.floor(value || 0)
+      if (q < 1) q = 1
+      if (q > item.estoqueDisponivel) { q = item.estoqueDisponivel; toast.error('Estoque insuficiente') }
+      updated[idx] = { ...item, quantidade: q, subtotal: q * item.precoUnitario }
       return updated
     })
   }
@@ -128,6 +152,26 @@ export default function PDVPage() {
       const itens: ItemVenda[] = cart.map(({ produtoId, produtoNome, tamanho, quantidade, precoUnitario, subtotal }) => ({
         produtoId, produtoNome, tamanho, quantidade, precoUnitario, subtotal,
       }))
+
+      // Consignação: entrega ao lojista (baixa estoque, não fatura até o acerto)
+      if (formaPagamento === 'consignado') {
+        await criarConsignacao({
+          clienteId, clienteNome: cliente.nome, clienteCidade: cliente.cidade,
+          clienteTelefone: cliente.telefone ?? '',
+          itens: cart.map(({ produtoId, produtoNome, tamanho, quantidade, precoUnitario }) => ({
+            produtoId, produtoNome, tamanho, quantidade, precoUnitario,
+          })),
+        })
+
+        qc.invalidateQueries({ queryKey: ['consignacoes'] })
+        qc.invalidateQueries({ queryKey: ['produtos'] })
+        qc.invalidateQueries({ queryKey: ['dashboard'] })
+
+        setCart([]); setClienteId(''); setFormaPagamento('dinheiro'); setEntrada(0); setNumeroParcelas(2)
+        setUltimaOperacao('consignacao')
+        setCheckoutOpen(false); setSuccessDialog(true)
+        return
+      }
 
       // Montar parcelas se promissória
       let parcelas: Array<{
@@ -174,6 +218,7 @@ export default function PDVPage() {
       qc.invalidateQueries({ queryKey: ['dashboard'] })
 
       setCart([]); setClienteId(''); setFormaPagamento('dinheiro'); setEntrada(0); setNumeroParcelas(2)
+      setUltimaOperacao('venda')
       setCheckoutOpen(false); setSuccessDialog(true)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao finalizar venda')
@@ -188,41 +233,67 @@ export default function PDVPage() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input ref={searchRef} placeholder="Buscar produto, código interno ou EAN..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && filtered.length === 1) { const p = filtered[0]; const t = TAMANHOS.find((t) => (p.estoque[t] ?? 0) > 0); if (t) addToCart(p, t) } }} />
+              onKeyDown={(e) => { if (e.key === 'Enter' && filtered.length === 1) { const p = filtered[0]; const t = usarTamanhos ? TAMANHOS.find((t) => (p.estoque[t] ?? 0) > 0) : 'M'; if (t) addToCart(p, t) } }} />
           </div>
-          <BarcodeScanner compact onDetected={handleBarcodeDetected} label="Ler código" />
+          <BarcodeScanner onDetected={handleBarcodeDetected} label="Ler código" className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white border-blue-600 hover:text-white" />
         </div>
-        {produtos.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3"><Package className="h-12 w-12 opacity-30" /><p className="text-sm">Nenhum produto cadastrado no estoque</p></div>
+        {!search.trim() ? (
+          <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3 text-center">
+            <Search className="h-10 w-10 opacity-25" />
+            <p className="text-sm max-w-xs">Busque um produto pelo nome, código ou EAN — ou use o leitor de código de barras.</p>
+          </div>
         ) : filtered.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">Nenhum produto com estoque encontrado</p>
+          <p className="text-sm text-muted-foreground py-10 text-center">Nenhum produto com estoque encontrado para “{search}”.</p>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-            {filtered.map((p) => (
-              <Card key={p.id} className="hover:border-primary/50 transition-colors cursor-default">
-                <CardContent className="p-3 space-y-2">
-                  <div className="flex items-start justify-between gap-1">
-                    <div className="min-w-0">
-                      <p className="font-medium text-sm leading-tight truncate">{p.nome}</p>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <Badge variant="outline" className="text-[10px] font-mono px-1">{p.codigo}</Badge>
-                        <span className="text-sm font-bold text-green-600 dark:text-green-400">{formatCurrency(p.precoVenda)}</span>
-                      </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {filtered.map((p) => {
+              const total = Object.values(p.estoque).reduce((a, b) => a + b, 0)
+              const tamsComEstoque = TAMANHOS.filter((t) => (p.estoque[t] ?? 0) > 0)
+              return (
+                <div key={p.id} className="flex items-center gap-2.5 rounded-xl border bg-card p-2 hover:border-primary/40 transition-colors">
+                  <div className="h-11 w-11 shrink-0 rounded-lg bg-muted border flex items-center justify-center overflow-hidden">
+                    {p.fotoUrl
+                      ? <Image src={p.fotoUrl} alt={p.nome} width={44} height={44} className="object-cover w-full h-full" />
+                      : <Package className="h-5 w-5 text-muted-foreground/40" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate leading-tight">{p.nome}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <Badge variant="outline" className="text-[10px] font-mono px-1">{p.codigo}</Badge>
+                      <span className="text-sm font-bold text-green-600 dark:text-green-400">{formatCurrency(p.precoVenda)}</span>
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-1">
-                    {TAMANHOS.map((t) => { const qty = p.estoque[t] ?? 0; return (
-                      <button key={t} disabled={qty === 0} onClick={() => addToCart(p, t)}
-                        className={`text-xs px-2 py-1 rounded border font-semibold transition-colors ${qty === 0
-                          ? 'opacity-25 cursor-not-allowed border-border text-muted-foreground'
-                          : 'hover:bg-primary hover:text-primary-foreground border-primary text-primary cursor-pointer active:scale-95'}`}>
-                        {t}<span className="ml-0.5 font-normal opacity-70">({qty})</span>
-                      </button>
-                    ) })}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  {usarTamanhos && tamsComEstoque.length > 1 ? (
+                    <Popover>
+                      <PopoverTrigger
+                        disabled={total === 0}
+                        title="Escolher tamanho"
+                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                      >
+                        <ShoppingCart className="h-4 w-4" />
+                      </PopoverTrigger>
+                      <PopoverContent align="end" className="w-auto p-2">
+                        <p className="text-[10px] text-muted-foreground mb-1.5 px-0.5">Escolha o tamanho</p>
+                        <div className="flex flex-wrap gap-1 max-w-[180px]">
+                          {tamsComEstoque.map((t) => (
+                            <button key={t} onClick={() => addToCart(p, t)}
+                              className="text-xs px-2 py-1 rounded border border-primary text-primary font-semibold hover:bg-primary hover:text-primary-foreground active:scale-95 transition-colors">
+                              {t}<span className="ml-0.5 font-normal opacity-70">({p.estoque[t]})</span>
+                            </button>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  ) : (
+                    <Button size="icon" disabled={total === 0}
+                      onClick={() => addToCart(p, usarTamanhos ? (tamsComEstoque[0] ?? 'M') : 'M')}
+                      className="h-10 w-10 rounded-xl shrink-0" title="Adicionar ao carrinho">
+                      <ShoppingCart className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
@@ -240,16 +311,34 @@ export default function PDVPage() {
               <div className="text-center py-8 text-muted-foreground"><Package className="h-8 w-8 mx-auto mb-2 opacity-30" /><p className="text-xs">Carrinho vazio</p></div>
             ) : (
               <>
-                <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
                   {cart.map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-2 text-sm">
-                      <div className="flex-1 min-w-0"><p className="font-medium truncate leading-tight">{item.produtoNome}</p><p className="text-xs text-muted-foreground">{item.tamanho} — {formatCurrency(item.precoUnitario)}</p></div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateQty(idx, -1)}><Minus className="h-3 w-3" /></Button>
-                        <span className="w-5 text-center font-semibold">{item.quantidade}</span>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateQty(idx, 1)}><Plus className="h-3 w-3" /></Button>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => removeItem(idx)}><Trash2 className="h-3 w-3" /></Button>
+                    <div key={idx} className="flex items-center gap-2.5 rounded-xl border p-2">
+                      <div className="h-10 w-10 shrink-0 rounded-lg bg-muted border flex items-center justify-center overflow-hidden">
+                        {item.fotoUrl
+                          ? <Image src={item.fotoUrl} alt={item.produtoNome} width={40} height={40} className="object-cover w-full h-full" />
+                          : <Package className="h-4 w-4 text-muted-foreground/40" />}
                       </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate leading-tight">{item.produtoNome}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {usarTamanhos ? `${item.tamanho} · ` : ''}{formatCurrency(item.precoUnitario)} · <span className="font-semibold text-foreground">{formatCurrency(item.subtotal)}</span>
+                        </p>
+                      </div>
+                      <Input type="number" min={1} max={item.estoqueDisponivel} value={item.quantidade}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => setQty(idx, Number(e.target.value))}
+                        className="w-12 h-8 px-1 text-center shrink-0" />
+                      <DropdownMenu>
+                        <DropdownMenuTrigger className="inline-flex h-8 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+                          <MoreVertical className="h-4 w-4" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem className="text-destructive" onClick={() => removeItem(idx)}>
+                            <Trash2 className="mr-2 h-4 w-4" />Remover
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   ))}
                 </div>
@@ -262,6 +351,26 @@ export default function PDVPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Barra de carrinho fixa (mobile) — sempre visível acima do menu inferior */}
+      {cart.length > 0 && (
+        <div className="fixed inset-x-0 bottom-16 z-30 px-3 lg:hidden">
+          <div className="flex items-center gap-3 rounded-xl border bg-card shadow-lg px-4 py-2.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="relative shrink-0">
+                <ShoppingCart className="h-5 w-5" />
+                <span className="absolute -top-1.5 -right-1.5 h-4 min-w-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
+                  {cart.reduce((s, i) => s + i.quantidade, 0)}
+                </span>
+              </div>
+              <span className="font-bold text-base truncate">{formatCurrency(cartTotal)}</span>
+            </div>
+            <Button className="ml-auto shrink-0" size="sm" onClick={() => setCheckoutOpen(true)}>
+              Finalizar
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Checkout Dialog */}
       <Dialog open={checkoutOpen} onOpenChange={setCheckoutOpen}>
@@ -288,15 +397,22 @@ export default function PDVPage() {
                 {entrada > 0 && <p className="col-span-2 text-xs text-muted-foreground">{numeroParcelas}× de {formatCurrency((cartTotal - entrada) / numeroParcelas)} mensais</p>}
               </div>
             )}
+            {formaPagamento === 'consignado' && (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-muted-foreground space-y-1">
+                <p className="font-semibold text-amber-600 dark:text-amber-400">Entrega em consignação</p>
+                <p>As peças saem do seu estoque agora, mas <strong>nada é faturado</strong>. O lojista paga só o que vender (ao preço de repasse = preço de venda) e devolve o restante no acerto de contas, em <strong>Consignações</strong>.</p>
+                <p className="pt-1">Valor potencial (se vender tudo): <strong className="text-foreground font-mono">{formatCurrency(cartTotal)}</strong></p>
+              </div>
+            )}
             <Separator />
             <div className="space-y-1">
-              {cart.map((item, i) => (<div key={i} className="flex justify-between text-sm"><span className="text-muted-foreground">{item.produtoNome} ({item.tamanho}) ×{item.quantidade}</span><span>{formatCurrency(item.subtotal)}</span></div>))}
+              {cart.map((item, i) => (<div key={i} className="flex justify-between text-sm"><span className="text-muted-foreground">{item.produtoNome}{usarTamanhos ? ` (${item.tamanho})` : ''} ×{item.quantidade}</span><span>{formatCurrency(item.subtotal)}</span></div>))}
               <div className="flex justify-between font-bold text-base pt-1"><span>Total</span><span>{formatCurrency(cartTotal)}</span></div>
             </div>
           </div>
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button variant="outline" onClick={() => setCheckoutOpen(false)}>Voltar</Button>
-            <Button onClick={handleFinalizarVenda} disabled={saving || !clienteId}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirmar Venda</Button>
+            <Button onClick={handleFinalizarVenda} disabled={saving || !clienteId}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{formaPagamento === 'consignado' ? 'Confirmar Consignação' : 'Confirmar Venda'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -306,10 +422,10 @@ export default function PDVPage() {
         <DialogContent className="max-w-xs text-center">
           <div className="space-y-3 py-4">
             <CheckCircle2 className="h-14 w-14 text-green-500 mx-auto" />
-            <h2 className="text-xl font-bold">Venda realizada!</h2>
-            <p className="text-sm text-muted-foreground">A venda foi registrada com sucesso.</p>
+            <h2 className="text-xl font-bold">{ultimaOperacao === 'consignacao' ? 'Consignação registrada!' : 'Venda realizada!'}</h2>
+            <p className="text-sm text-muted-foreground">{ultimaOperacao === 'consignacao' ? 'As peças foram entregues. Faça o acerto em Consignações quando o lojista prestar contas.' : 'A venda foi registrada com sucesso.'}</p>
           </div>
-          <DialogFooter><Button className="w-full" onClick={() => setSuccessDialog(false)}>Nova Venda</Button></DialogFooter>
+          <DialogFooter><Button className="w-full" onClick={() => setSuccessDialog(false)}>{ultimaOperacao === 'consignacao' ? 'Nova Operação' : 'Nova Venda'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

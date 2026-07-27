@@ -2,6 +2,8 @@ import { supabase } from './supabase'
 import type {
   Cliente, Produto, Venda, Parcela, Fornecedor,
   Configuracoes, FormaPagamento, ItemVenda, Tamanho,
+  MovimentacaoEstoque,
+  Consignacao, AcertoConsignacao, FormaPagamentoRecebimento,
 } from '@/types'
 
 // ─── CLIENTES ────────────────────────────────────────────────────────────────
@@ -138,104 +140,32 @@ export async function executarVenda(params: {
     pagamentos: unknown[]
   }>
 }): Promise<string> {
-  // 1. Validar estoque
-  for (const item of params.itens) {
-    const { data: produto, error } = await supabase
-      .from('produtos').select('estoque').eq('id', item.produtoId).single()
-    if (error) throw new Error(`Produto "${item.produtoNome}" não encontrado`)
-    const disponivel = ((produto.estoque as Record<string, number>)[item.tamanho]) ?? 0
-    if (disponivel < item.quantidade) {
-      throw new Error(
-        `Estoque insuficiente: ${item.produtoNome} tam. ${item.tamanho} — disponível: ${disponivel}, solicitado: ${item.quantidade}`
-      )
-    }
-  }
-
-  // 2. Inserir venda
-  const isPromissoria = params.formaPagamento === 'promissoria'
-  const { data: venda, error: vendaError } = await supabase.from('vendas').insert({
-    clienteId: params.clienteId,
-    clienteNome: params.clienteNome,
-    clienteCidade: params.clienteCidade,
-    itens: params.itens,
-    total: params.total,
-    formaPagamento: params.formaPagamento,
-    entrada: params.entrada ?? 0,
-    numeroParcelas: params.numeroParcelas ?? 1,
-    observacoes: params.observacoes ?? '',
-    status: isPromissoria ? 'pendente' : 'paga',
-  }).select('id').single()
-  if (vendaError) throw vendaError
-
-  const vendaId = venda.id
-
-  // 3. Atualizar estoque + movimentações
-  for (const item of params.itens) {
-    const { data: produto } = await supabase
-      .from('produtos').select('estoque').eq('id', item.produtoId).single()
-    if (produto) {
-      const novoEstoque = { ...(produto.estoque as Record<string, number>) }
-      novoEstoque[item.tamanho] = (novoEstoque[item.tamanho] ?? 0) - item.quantidade
-      await supabase.from('produtos').update({ estoque: novoEstoque }).eq('id', item.produtoId)
-    }
-    await supabase.from('movimentacoes').insert({
-      produtoId: item.produtoId,
-      produtoNome: item.produtoNome,
-      tipo: 'saida',
-      tamanho: item.tamanho,
-      quantidade: item.quantidade,
-      motivo: 'Venda',
-      vendaId,
-    })
-  }
-
-  // 4. Criar parcelas
-  if (params.parcelas && params.parcelas.length > 0) {
-    const parcelasToInsert = params.parcelas.map((p) => ({
-      ...p,
-      vendaId,
-      clienteId: params.clienteId,
-    }))
-    const { error: parcelasError } = await supabase.from('parcelas').insert(parcelasToInsert)
-    if (parcelasError) throw parcelasError
-  }
-
-  return vendaId
+  // Toda a operação roda numa única transação no Postgres (RPC executar_venda):
+  // valida + trava o estoque (FOR UPDATE), insere a venda, baixa o estoque,
+  // cria movimentações e parcelas. Falha em qualquer passo reverte tudo.
+  const { data, error } = await supabase.rpc('executar_venda', {
+    p_cliente_id: params.clienteId,
+    p_cliente_nome: params.clienteNome,
+    p_cliente_cidade: params.clienteCidade,
+    p_itens: params.itens,
+    p_total: params.total,
+    p_forma_pagamento: params.formaPagamento,
+    p_entrada: params.entrada ?? 0,
+    p_numero_parcelas: params.numeroParcelas ?? 1,
+    p_observacoes: params.observacoes ?? '',
+    p_parcelas: params.parcelas ?? [],
+  })
+  if (error) throw new Error(error.message)
+  return data as string
 }
 
 /**
  * Cancela uma venda: restaura estoque, cancela parcelas pendentes.
+ * Transacional (RPC cancelar_venda) — lê os itens/parcelas direto do banco.
  */
-export async function cancelarVenda(vendaId: string, itens: ItemVenda[], parcelas: Parcela[]) {
-  // Cancelar venda
-  await supabase.from('vendas').update({ status: 'cancelada' }).eq('id', vendaId)
-
-  // Cancelar parcelas pendentes
-  for (const p of parcelas) {
-    if (p.status !== 'paga') {
-      await supabase.from('parcelas').update({ status: 'cancelada' }).eq('id', p.id)
-    }
-  }
-
-  // Restaurar estoque
-  for (const item of itens) {
-    const { data: produto } = await supabase
-      .from('produtos').select('estoque').eq('id', item.produtoId).single()
-    if (produto) {
-      const novoEstoque = { ...(produto.estoque as Record<string, number>) }
-      novoEstoque[item.tamanho] = (novoEstoque[item.tamanho] ?? 0) + item.quantidade
-      await supabase.from('produtos').update({ estoque: novoEstoque }).eq('id', item.produtoId)
-      await supabase.from('movimentacoes').insert({
-        produtoId: item.produtoId,
-        produtoNome: item.produtoNome,
-        tipo: 'entrada',
-        tamanho: item.tamanho,
-        quantidade: item.quantidade,
-        motivo: 'Cancelamento da venda',
-        vendaId,
-      })
-    }
-  }
+export async function cancelarVenda(vendaId: string) {
+  const { error } = await supabase.rpc('cancelar_venda', { p_venda_id: vendaId })
+  if (error) throw new Error(error.message)
 }
 
 /**
@@ -251,34 +181,98 @@ export async function editarVenda(params: {
   itensAtualizado: ItemVenda[]
   novoTotal: number
 }) {
-  // Ajustar estoque para diferenças de quantidade
-  for (let i = 0; i < params.itensOriginal.length; i++) {
-    const oldItem = params.itensOriginal[i]
-    const newItem = params.itensAtualizado[i]
-    const delta = newItem.quantidade - oldItem.quantidade
-    if (delta !== 0) {
-      const { data: produto } = await supabase
-        .from('produtos').select('estoque').eq('id', oldItem.produtoId).single()
-      if (produto) {
-        const estoque = { ...(produto.estoque as Record<string, number>) }
-        estoque[oldItem.tamanho] = (estoque[oldItem.tamanho] ?? 0) - delta
-        if (estoque[oldItem.tamanho] < 0) {
-          throw new Error(`Estoque insuficiente para ${oldItem.produtoNome} (${oldItem.tamanho})`)
-        }
-        await supabase.from('produtos').update({ estoque }).eq('id', oldItem.produtoId)
-      }
-    }
-  }
+  // Transacional (RPC editar_venda): ajusta o estoque pelas diferenças de
+  // quantidade (com trava) e atualiza a venda numa única transação.
+  const { error } = await supabase.rpc('editar_venda', {
+    p_venda_id: params.vendaId,
+    p_cliente_id: params.clienteId,
+    p_cliente_nome: params.clienteNome,
+    p_cliente_cidade: params.clienteCidade,
+    p_forma_pagamento: params.formaPagamento,
+    p_itens_original: params.itensOriginal,
+    p_itens_atualizado: params.itensAtualizado,
+    p_novo_total: params.novoTotal,
+  })
+  if (error) throw new Error(error.message)
+}
 
-  // Atualizar venda
-  await supabase.from('vendas').update({
-    clienteId: params.clienteId,
-    clienteNome: params.clienteNome,
-    clienteCidade: params.clienteCidade,
-    formaPagamento: params.formaPagamento,
-    itens: params.itensAtualizado,
-    total: params.novoTotal,
-  }).eq('id', params.vendaId)
+// ─── CONSIGNAÇÃO ─────────────────────────────────────────────────────────────
+
+export async function fetchConsignacoes(): Promise<Consignacao[]> {
+  const { data, error } = await supabase
+    .from('consignacoes').select('*').order('createdAt', { ascending: false })
+  if (error) throw error
+  return data as Consignacao[]
+}
+
+export async function fetchConsignacaoById(id: string): Promise<Consignacao | null> {
+  const { data, error } = await supabase.from('consignacoes').select('*').eq('id', id).single()
+  if (error) throw error
+  return data as Consignacao
+}
+
+export async function fetchAcertosByConsignacao(consignacaoId: string): Promise<AcertoConsignacao[]> {
+  const { data, error } = await supabase
+    .from('consignacao_acertos').select('*')
+    .eq('consignacaoId', consignacaoId)
+    .order('createdAt', { ascending: false })
+  if (error) throw error
+  return data as AcertoConsignacao[]
+}
+
+/**
+ * Cria uma consignação (entrega de peças ao lojista):
+ * 1. Valida estoque
+ * 2. Baixa o estoque (as peças saem para o lojista)
+ * 3. Registra movimentações de saída
+ * 4. Cria a consignação com status 'aberta'
+ * Nada é faturado aqui — o faturamento só acontece nos acertos.
+ */
+export async function criarConsignacao(params: {
+  clienteId: string
+  clienteNome: string
+  clienteCidade: string
+  clienteTelefone: string
+  itens: Array<{ produtoId: string; produtoNome: string; tamanho: Tamanho; quantidade: number; precoUnitario: number }>
+  observacoes?: string
+}): Promise<string> {
+  // Transacional (RPC criar_consignacao): valida + trava o estoque, cria a
+  // consignação, baixa o estoque e registra as movimentações numa transação.
+  const { data, error } = await supabase.rpc('criar_consignacao', {
+    p_cliente_id: params.clienteId,
+    p_cliente_nome: params.clienteNome,
+    p_cliente_cidade: params.clienteCidade,
+    p_cliente_telefone: params.clienteTelefone,
+    p_itens: params.itens,
+    p_observacoes: params.observacoes ?? '',
+  })
+  if (error) throw new Error(error.message)
+  return data as string
+}
+
+/**
+ * Registra um acerto (prestação de contas parcial) de uma consignação:
+ * - Soma as vendidas/devolvidas de cada item (validando contra o pendente)
+ * - Devolvidas voltam ao estoque (entrada + movimentação)
+ * - Vendidas geram valor recebido = qtd × preço de repasse
+ * - Fecha a consignação se todas as peças já foram acertadas
+ */
+export async function registrarAcerto(params: {
+  consignacao: Consignacao
+  itens: Array<{ produtoId: string; produtoNome: string; tamanho: Tamanho; vendidas: number; devolvidas: number }>
+  formaPagamento: FormaPagamentoRecebimento
+  observacoes?: string
+}): Promise<void> {
+  // Transacional (RPC registrar_acerto): trava a consignação (FOR UPDATE),
+  // valida o pendente contra o estado ATUAL do banco (não o cache do cliente),
+  // devolve ao estoque, registra o acerto e atualiza totais/status.
+  const { error } = await supabase.rpc('registrar_acerto', {
+    p_consignacao_id: params.consignacao.id,
+    p_itens: params.itens.map(({ produtoId, tamanho, vendidas, devolvidas }) => ({ produtoId, tamanho, vendidas, devolvidas })),
+    p_forma_pagamento: params.formaPagamento,
+    p_observacoes: params.observacoes ?? '',
+  })
+  if (error) throw new Error(error.message)
 }
 
 // ─── PARCELAS ────────────────────────────────────────────────────────────────
@@ -363,6 +357,16 @@ export async function insertMovimentacao(mov: {
   if (error) throw error
 }
 
+export async function fetchMovimentacoesByProduto(produtoId: string): Promise<MovimentacaoEstoque[]> {
+  const { data, error } = await supabase
+    .from('movimentacoes')
+    .select('*')
+    .eq('produtoId', produtoId)
+    .order('createdAt', { ascending: false })
+  if (error) throw error
+  return data as MovimentacaoEstoque[]
+}
+
 // ─── CONFIGURAÇÕES ───────────────────────────────────────────────────────────
 
 export async function fetchConfig(): Promise<Configuracoes | null> {
@@ -400,16 +404,18 @@ export async function fetchDashboardData() {
 // ─── RELATÓRIOS ──────────────────────────────────────────────────────────────
 
 export async function fetchRelatoriosData() {
-  const [vendasRes, parcelasRes, produtosRes] = await Promise.all([
+  const [vendasRes, parcelasRes, produtosRes, acertosRes] = await Promise.all([
     supabase.from('vendas').select('*'),
     supabase.from('parcelas').select('*'),
     supabase.from('produtos').select('*'),
+    supabase.from('consignacao_acertos').select('*'),
   ])
 
   return {
     vendas: (vendasRes.data ?? []) as Venda[],
     parcelas: (parcelasRes.data ?? []) as Parcela[],
     produtos: (produtosRes.data ?? []) as Produto[],
+    acertos: (acertosRes.data ?? []) as AcertoConsignacao[],
   }
 }
 

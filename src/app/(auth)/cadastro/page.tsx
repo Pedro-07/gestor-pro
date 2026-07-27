@@ -91,7 +91,7 @@ export default function CadastroPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="nomeLoja">Nome da Loja</Label>
-              <Input id="nomeLoja" placeholder="Minha Loja de Roupas" disabled={loading} {...register('nomeLoja')} />
+              <Input id="nomeLoja" placeholder="Sua Loja de Roupas" disabled={loading} {...register('nomeLoja')} />
               {errors.nomeLoja && <p className="text-sm text-destructive">{errors.nomeLoja.message}</p>}
             </div>
             <div className="space-y-2">

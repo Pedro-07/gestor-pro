@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Camera, CameraOff, Loader2, ScanLine } from 'lucide-react'
 import { toast } from 'sonner'
+import type { IScannerControls } from '@zxing/browser'
 
 interface BarcodeScannerProps {
   onDetected: (code: string) => void
@@ -13,6 +14,8 @@ interface BarcodeScannerProps {
   compact?: boolean
   /** Label shown on the open button (default: "Ler código") */
   label?: string
+  /** Extra classes for the trigger button (e.g. cor de destaque) */
+  className?: string
 }
 
 declare class BarcodeDetector {
@@ -21,8 +24,22 @@ declare class BarcodeDetector {
   detect(image: ImageBitmapSource): Promise<Array<{ rawValue: string }>>
 }
 
-export function BarcodeScanner({ onDetected, compact = false, label = 'Ler código' }: BarcodeScannerProps) {
+/** Câmera traseira em alta resolução + autofoco contínuo (ajuda a ler códigos pequenos). */
+function videoConstraints(): MediaTrackConstraints {
+  const c: MediaTrackConstraints = {
+    facingMode: 'environment',
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+  }
+  // focusMode não está nos tipos padrão; aplica quando o navegador suportar
+  ;(c as unknown as { advanced?: unknown[] }).advanced = [{ focusMode: 'continuous' }]
+  return c
+}
+
+export function BarcodeScanner({ onDetected, compact = false, label = 'Ler código', className }: BarcodeScannerProps) {
   const [open, setOpen] = useState(false)
+  // supported = a câmera pode ser usada (getUserMedia disponível). A LEITURA em
+  // si funciona via BarcodeDetector nativo OU, quando ausente, via ZXing (JS).
   const [supported, setSupported] = useState<boolean | null>(null)
   const [scanning, setScanning] = useState(false)
   const [manualCode, setManualCode] = useState('')
@@ -30,13 +47,19 @@ export function BarcodeScanner({ onDetected, compact = false, label = 'Ler códi
   const streamRef = useRef<MediaStream | null>(null)
   const detectorRef = useRef<BarcodeDetector | null>(null)
   const rafRef = useRef<number>(0)
+  const zxingRef = useRef<IScannerControls | null>(null)
+  const doneRef = useRef(false)
 
   useEffect(() => {
-    setSupported('BarcodeDetector' in window)
+    setSupported(typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia)
   }, [])
 
   const stopCamera = useCallback(() => {
     cancelAnimationFrame(rafRef.current)
+    if (zxingRef.current) {
+      zxingRef.current.stop()
+      zxingRef.current = null
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop())
       streamRef.current = null
@@ -45,48 +68,71 @@ export function BarcodeScanner({ onDetected, compact = false, label = 'Ler códi
     setScanning(false)
   }, [])
 
+  const emit = useCallback((code: string) => {
+    if (doneRef.current) return
+    doneRef.current = true
+    stopCamera()
+    setOpen(false)
+    onDetected(code)
+    toast.success(`Código lido: ${code}`)
+  }, [onDetected, stopCamera])
+
   const startCamera = useCallback(async () => {
+    doneRef.current = false
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-      })
-      streamRef.current = stream
-      if (!videoRef.current) return
-      videoRef.current.srcObject = stream
-      await videoRef.current.play()
+      // Caminho rápido: BarcodeDetector nativo (Chrome/Edge Android/desktop)
+      if ('BarcodeDetector' in window) {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints() })
+        streamRef.current = stream
+        if (!videoRef.current) return
+        videoRef.current.srcObject = stream
+        await videoRef.current.play()
 
-      if (!detectorRef.current) {
-        detectorRef.current = new BarcodeDetector({
-          formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'qr_code', 'upc_a', 'upc_e'],
-        })
-      }
+        if (!detectorRef.current) {
+          detectorRef.current = new BarcodeDetector({
+            formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'qr_code', 'upc_a', 'upc_e'],
+          })
+        }
+        setScanning(true)
 
-      setScanning(true)
-
-      const scan = async () => {
-        if (!videoRef.current || !detectorRef.current) return
-        if (videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
-          try {
-            const results = await detectorRef.current.detect(videoRef.current)
-            if (results.length > 0) {
-              const code = results[0].rawValue
-              stopCamera()
-              setOpen(false)
-              onDetected(code)
-              toast.success(`Código lido: ${code}`)
-              return
-            }
-          } catch { /* frame not ready */ }
+        const scan = async () => {
+          if (!videoRef.current || !detectorRef.current || doneRef.current) return
+          if (videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
+            try {
+              const results = await detectorRef.current.detect(videoRef.current)
+              if (results.length > 0) { emit(results[0].rawValue); return }
+            } catch { /* frame not ready */ }
+          }
+          rafRef.current = requestAnimationFrame(scan)
         }
         rafRef.current = requestAnimationFrame(scan)
+        return
       }
-      rafRef.current = requestAnimationFrame(scan)
+
+      // Fallback universal: ZXing decodifica em JS (iOS Safari, Android sem BarcodeDetector)
+      const { BrowserMultiFormatReader } = await import('@zxing/browser')
+      const { DecodeHintType, BarcodeFormat } = await import('@zxing/library')
+      const hints = new Map()
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+        BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.CODE_128,
+        BarcodeFormat.CODE_39, BarcodeFormat.QR_CODE, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E,
+      ])
+      hints.set(DecodeHintType.TRY_HARDER, true) // mais esforço p/ códigos pequenos/borrados
+      // delayBetweenScanAttempts padrão é 500ms (2 leituras/s) — baixamos p/ ~12/s
+      const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 80, delayBetweenScanSuccess: 250 })
+      if (!videoRef.current) return
+      setScanning(true)
+      zxingRef.current = await reader.decodeFromConstraints(
+        { video: videoConstraints() },
+        videoRef.current,
+        (result) => { if (result) emit(result.getText()) }
+      )
     } catch (err) {
       console.error(err)
-      toast.error('Não foi possível acessar a câmera')
+      toast.error('Não foi possível acessar a câmera. Verifique a permissão e use HTTPS.')
       stopCamera()
     }
-  }, [onDetected, stopCamera])
+  }, [emit, stopCamera])
 
   function handleOpen() {
     setManualCode('')
@@ -111,11 +157,11 @@ export function BarcodeScanner({ onDetected, compact = false, label = 'Ler códi
   }
 
   const trigger = compact ? (
-    <Button type="button" variant="outline" size="icon" className="shrink-0 h-9 w-9" onClick={handleOpen} title={label}>
+    <Button type="button" variant="outline" size="icon" className={`shrink-0 h-9 w-9 ${className ?? ''}`} onClick={handleOpen} title={label}>
       <ScanLine className="h-4 w-4" />
     </Button>
   ) : (
-    <Button type="button" variant="outline" onClick={handleOpen}>
+    <Button type="button" variant="outline" className={className} onClick={handleOpen}>
       <ScanLine className="mr-2 h-4 w-4" />
       {label}
     </Button>
@@ -137,15 +183,15 @@ export function BarcodeScanner({ onDetected, compact = false, label = 'Ler códi
             <div className="text-center space-y-3 py-4">
               <CameraOff className="h-10 w-10 text-muted-foreground mx-auto" />
               <p className="text-sm text-muted-foreground">
-                Seu navegador não suporta leitura automática.<br />
-                Use Chrome ou Edge para ativar a câmera.
+                Este dispositivo não expõe a câmera ao navegador.<br />
+                Digite o código manualmente abaixo.
               </p>
             </div>
           ) : (
             <div className="space-y-3">
               {/* Camera preview */}
               <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
-                <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
+                <video ref={videoRef} className="w-full h-full object-cover" muted playsInline autoPlay />
                 {!scanning && (
                   <div className="absolute inset-0 flex items-center justify-center">
                     <Loader2 className="h-8 w-8 animate-spin text-white" />

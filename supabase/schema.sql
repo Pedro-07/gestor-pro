@@ -6,6 +6,8 @@
 
 -- ─── LIMPEZA PRÉVIA ──────────────────────────────────────────────────────────
 -- Remove as tabelas antigas para recriá-las com a nova arquitetura SaaS
+DROP TABLE IF EXISTS consignacao_acertos CASCADE;
+DROP TABLE IF EXISTS consignacoes CASCADE;
 DROP TABLE IF EXISTS movimentacoes CASCADE;
 DROP TABLE IF EXISTS parcelas CASCADE;
 DROP TABLE IF EXISTS vendas CASCADE;
@@ -120,6 +122,40 @@ CREATE TABLE movimentacoes (
   "createdAt" TIMESTAMPTZ DEFAULT now()
 );
 
+-- ─── CONSIGNAÇÕES ────────────────────────────────────────────────────────────
+CREATE TABLE consignacoes (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  loja_id UUID NOT NULL DEFAULT auth.uid(),
+  "clienteId" UUID NOT NULL REFERENCES clientes(id),
+  "clienteNome" TEXT NOT NULL,
+  "clienteCidade" TEXT NOT NULL DEFAULT '',
+  "clienteTelefone" TEXT NOT NULL DEFAULT '',
+  itens JSONB NOT NULL DEFAULT '[]',
+  "totalEntregue" NUMERIC(10,2) NOT NULL DEFAULT 0,
+  "totalRecebido" NUMERIC(10,2) NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'aberta'
+    CHECK (status IN ('aberta','fechada','cancelada')),
+  observacoes TEXT,
+  "dataEntrega" TIMESTAMPTZ DEFAULT now(),
+  "createdAt" TIMESTAMPTZ DEFAULT now(),
+  "updatedAt" TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE consignacao_acertos (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  loja_id UUID NOT NULL DEFAULT auth.uid(),
+  "consignacaoId" UUID NOT NULL REFERENCES consignacoes(id) ON DELETE CASCADE,
+  "clienteId" UUID NOT NULL REFERENCES clientes(id),
+  "clienteNome" TEXT NOT NULL,
+  itens JSONB NOT NULL DEFAULT '[]',
+  "valorRecebido" NUMERIC(10,2) NOT NULL DEFAULT 0,
+  "formaPagamento" TEXT NOT NULL DEFAULT 'dinheiro'
+    CHECK ("formaPagamento" IN ('dinheiro','pix','cartao')),
+  observacoes TEXT,
+  "dataAcerto" TIMESTAMPTZ DEFAULT now(),
+  "createdAt" TIMESTAMPTZ DEFAULT now()
+);
+
 -- ─── CONFIGURAÇÕES ───────────────────────────────────────────────────────────
 CREATE TABLE config (
   loja_id UUID PRIMARY KEY DEFAULT auth.uid(),
@@ -128,8 +164,9 @@ CREATE TABLE config (
   "templateCobranca" TEXT NOT NULL DEFAULT '',
   "templateInadimplente" TEXT NOT NULL DEFAULT '',
   "templateConfirmacaoPagamento" TEXT NOT NULL DEFAULT '',
-  "nomeApp" TEXT DEFAULT 'Minha Loja',
-  "logoUrl" TEXT
+  "nomeApp" TEXT DEFAULT 'Stok Master',
+  "logoUrl" TEXT,
+  "usarTamanhos" BOOLEAN DEFAULT TRUE
 );
 
 -- ─── INDEXES ─────────────────────────────────────────────────────────────────
@@ -144,6 +181,11 @@ CREATE INDEX idx_parcelas_venda ON parcelas ("vendaId");
 CREATE INDEX idx_parcelas_cliente ON parcelas ("clienteId");
 CREATE INDEX idx_movimentacoes_loja ON movimentacoes (loja_id);
 CREATE INDEX idx_movimentacoes_produto ON movimentacoes ("produtoId");
+CREATE INDEX idx_consignacoes_loja ON consignacoes (loja_id);
+CREATE INDEX idx_consignacoes_cliente ON consignacoes ("clienteId");
+CREATE INDEX idx_consignacoes_status ON consignacoes (status);
+CREATE INDEX idx_acertos_loja ON consignacao_acertos (loja_id);
+CREATE INDEX idx_acertos_consignacao ON consignacao_acertos ("consignacaoId");
 
 -- ─── TRIGGER: auto-update "updatedAt" ────────────────────────────────────────
 CREATE OR REPLACE FUNCTION trigger_set_updated_at()
@@ -164,6 +206,8 @@ CREATE TRIGGER set_updated_at BEFORE UPDATE ON vendas
   FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON parcelas
   FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON consignacoes
+  FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
 
 -- ─── ROW LEVEL SECURITY (RLS) ────────────────────────────────────────────────
 -- Habilitar RLS em todas as tabelas
@@ -173,6 +217,8 @@ ALTER TABLE produtos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vendas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE parcelas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE movimentacoes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE consignacoes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE consignacao_acertos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE config ENABLE ROW LEVEL SECURITY;
 
 -- Policies: usuários autenticados só podem acessar dados da própria loja (loja_id = auth.uid())
@@ -182,6 +228,8 @@ CREATE POLICY "Isolamento por Loja" ON produtos FOR ALL USING (loja_id = auth.ui
 CREATE POLICY "Isolamento por Loja" ON vendas FOR ALL USING (loja_id = auth.uid());
 CREATE POLICY "Isolamento por Loja" ON parcelas FOR ALL USING (loja_id = auth.uid());
 CREATE POLICY "Isolamento por Loja" ON movimentacoes FOR ALL USING (loja_id = auth.uid());
+CREATE POLICY "Isolamento por Loja" ON consignacoes FOR ALL USING (loja_id = auth.uid());
+CREATE POLICY "Isolamento por Loja" ON consignacao_acertos FOR ALL USING (loja_id = auth.uid());
 CREATE POLICY "Isolamento por Loja" ON config FOR ALL USING (loja_id = auth.uid());
 
 -- ─── STORAGE ─────────────────────────────────────────────────────────────────
@@ -222,9 +270,9 @@ BEGIN
   INSERT INTO public.perfis (id, nome, nome_loja, telefone, email)
   VALUES (
     NEW.id,
-    NEW.raw_user_meta_data->>'nome',
-    NEW.raw_user_meta_data->>'nome_loja',
-    NEW.raw_user_meta_data->>'telefone',
+    COALESCE(NEW.raw_user_meta_data->>'nome', 'Administrador'),
+    COALESCE(NEW.raw_user_meta_data->>'nome_loja', 'Nova Loja'),
+    COALESCE(NEW.raw_user_meta_data->>'telefone', '000-' || left(NEW.id::text, 8)),
     NEW.email
   );
   
@@ -232,9 +280,9 @@ BEGIN
   INSERT INTO public.config (loja_id, "nomeApp", "nomeVendedor", "telefoneVendedor")
   VALUES (
     NEW.id,
-    NEW.raw_user_meta_data->>'nome_loja',
-    NEW.raw_user_meta_data->>'nome',
-    NEW.raw_user_meta_data->>'telefone'
+    COALESCE(NEW.raw_user_meta_data->>'nome_loja', 'Nova Loja'),
+    COALESCE(NEW.raw_user_meta_data->>'nome', 'Administrador'),
+    COALESCE(NEW.raw_user_meta_data->>'telefone', '000-' || left(NEW.id::text, 8))
   ) ON CONFLICT DO NOTHING;
   
   RETURN NEW;

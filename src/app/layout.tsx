@@ -10,16 +10,32 @@ import { Toaster } from '@/components/ui/sonner'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Minha Loja',
+  title: 'Stok Master',
   description: 'Sistema de gestão para vendedor autônomo de roupas',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Gestão de Roupas',
+    title: 'Stok Master',
   },
   other: {
     'mobile-web-app-capable': 'yes',
+  },
+  openGraph: {
+    title: 'Stok Master - Controle sua Loja',
+    description: 'Sistema completo e gratuito para gestão de estoque, vendas e clientes.',
+    url: 'https://stokmaster.vercel.app', // Substitua pelo seu domínio final depois
+    siteName: 'Stok Master',
+    images: [
+      {
+        url: 'https://stokmaster.vercel.app/og-image.png', // Imagem da logo oficial
+        width: 1200,
+        height: 1200,
+        alt: 'Logo Stok Master',
+      },
+    ],
+    locale: 'pt_BR',
+    type: 'website',
   },
 }
 
