@@ -61,7 +61,6 @@ export default function EstoquePage() {
   const [selectedFornecedorId, setSelectedFornecedorId] = useState<string>('')
   const [fotoFile, setFotoFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const [isScanning, setIsScanning] = useState(false)
   const [selectedProdutoDetails, setSelectedProdutoDetails] = useState<Produto | null>(null)
   const [detalhesDialogOpen, setDetalhesDialogOpen] = useState(false)
   // Reconhecimento de código de barras já cadastrado (entrada rápida de estoque)
@@ -103,7 +102,6 @@ export default function EstoquePage() {
     setSelectedFornecedorId('')
     setFotoFile(null)
     setPreviewUrl(null)
-    setIsScanning(false)
     reset({
       codigo: generateCodigo(),
       categoria: 'outro',
@@ -117,7 +115,6 @@ export default function EstoquePage() {
     setSelectedFornecedorId(p.fornecedorId ?? '')
     setFotoFile(null)
     setPreviewUrl(p.fotoUrl ?? null)
-    setIsScanning(false)
     reset({
       codigo: p.codigo, nome: p.nome, descricao: p.descricao, categoria: p.categoria,
       precoCusto: p.precoCusto, precoVenda: p.precoVenda, estoque: p.estoque, codigoBarras: p.codigoBarras,
@@ -186,7 +183,6 @@ export default function EstoquePage() {
   // Ao bipar no cadastro: se o código já pertence a um produto, reconhece-o e
   // oferece dar entrada de estoque em vez de criar um duplicado.
   function handleScanCadastro(code: string) {
-    setIsScanning(false)
     const existente = produtos.find((p) => p.codigoBarras === code && p.id !== editingProduto?.id)
     if (existente) {
       setEntradaTamanho('M')
@@ -699,16 +695,10 @@ export default function EstoquePage() {
                 <Label>Código de Barras (EAN)</Label>
                 <div className="flex gap-2">
                   <Input {...register('codigoBarras')} placeholder="Deixe em branco p/ gerar auto" />
-                  <Button type="button" variant="outline" size="icon" onClick={() => setIsScanning(!isScanning)}>
-                    <Package className="h-4 w-4" />
-                  </Button>
+                  <BarcodeScanner onDetected={handleScanCadastro} label="Ler"
+                    className="shrink-0 px-4 bg-blue-600 hover:bg-blue-700 text-white border-blue-600 hover:text-white" />
                 </div>
               </div>
-              {isScanning && (
-                <div className="sm:col-span-2 border p-2 rounded-lg bg-black/5">
-                  <BarcodeScanner compact onDetected={handleScanCadastro} />
-                </div>
-              )}
               <div className="space-y-1 sm:col-span-2"><Label>Nome do Produto *</Label><Input {...register('nome')} placeholder="Ex: Camiseta Básica Algodão" />{errors.nome && <p className="text-xs text-destructive">{errors.nome.message}</p>}</div>
               <div className="space-y-1">
                 <Label>Categoria *</Label>
