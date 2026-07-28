@@ -52,13 +52,14 @@ export default function RelatoriosPage() {
   const vendasPeriodo = vendas.filter((v) =>
     isWithinInterval(getDate(v.createdAt), interval)
   )
+  // Acertos de consignação no período — contam como faturamento na DATA DO ACERTO
+  const acertosPeriodo = acertos.filter((a) => isWithinInterval(getDate(a.dataAcerto), interval))
 
   const totalVendasPeriodo = vendasPeriodo.reduce((acc, v) => acc + v.total, 0)
-
-  // Recebido de consignação no período (acertos pagos)
-  const recebidoConsignacaoPeriodo = acertos
-    .filter((a) => isWithinInterval(getDate(a.dataAcerto), interval))
-    .reduce((s, a) => s + (a.valorRecebido ?? 0), 0)
+  const recebidoConsignacaoPeriodo = acertosPeriodo.reduce((s, a) => s + (a.valorRecebido ?? 0), 0)
+  // Faturamento total = vendas + consignação faturada nos acertos
+  const totalFaturadoPeriodo = totalVendasPeriodo + recebidoConsignacaoPeriodo
+  const totalTransacoes = vendasPeriodo.length + acertosPeriodo.length
 
   const totalRecebidoPeriodo = parcelas.reduce((acc, p) => {
     const pagsPeriodo = (p.pagamentos ?? []).filter((pg) =>
@@ -73,6 +74,11 @@ export default function RelatoriosPage() {
     clienteMap[v.clienteId].total += v.total
     clienteMap[v.clienteId].vendas++
   })
+  acertosPeriodo.forEach((a) => {
+    if (!clienteMap[a.clienteId]) clienteMap[a.clienteId] = { nome: a.clienteNome, total: 0, vendas: 0 }
+    clienteMap[a.clienteId].total += a.valorRecebido ?? 0
+    clienteMap[a.clienteId].vendas++
+  })
   const rankingClientes = Object.values(clienteMap).sort((a, b) => b.total - a.total).slice(0, 10)
 
   const produtoMap: Record<string, { nome: string; quantidade: number; receita: number }> = {}
@@ -81,6 +87,15 @@ export default function RelatoriosPage() {
       if (!produtoMap[item.produtoId]) produtoMap[item.produtoId] = { nome: item.produtoNome, quantidade: 0, receita: 0 }
       produtoMap[item.produtoId].quantidade += item.quantidade
       produtoMap[item.produtoId].receita += item.subtotal
+    })
+  })
+  // Peças vendidas via consignação (só as 'vendidas' de cada acerto contam)
+  acertosPeriodo.forEach((a) => {
+    a.itens.forEach((it) => {
+      if (it.vendidas <= 0) return
+      if (!produtoMap[it.produtoId]) produtoMap[it.produtoId] = { nome: it.produtoNome, quantidade: 0, receita: 0 }
+      produtoMap[it.produtoId].quantidade += it.vendidas
+      produtoMap[it.produtoId].receita += it.vendidas * it.precoUnitario
     })
   })
   const rankingProdutos = Object.values(produtoMap).sort((a, b) => b.quantidade - a.quantidade).slice(0, 10)
@@ -189,6 +204,17 @@ export default function RelatoriosPage() {
       categoriaMap[formattedCat].quantidade += item.quantidade
     })
   })
+  acertosPeriodo.forEach((a) => {
+    a.itens.forEach((it) => {
+      if (it.vendidas <= 0) return
+      const prod = produtos.find((p) => p.id === it.produtoId)
+      const catName = prod?.categoria || 'Outros'
+      const formattedCat = catName.trim() === '' ? 'Sem Categoria' : catName
+      if (!categoriaMap[formattedCat]) categoriaMap[formattedCat] = { categoria: formattedCat, total: 0, quantidade: 0 }
+      categoriaMap[formattedCat].total += it.vendidas * it.precoUnitario
+      categoriaMap[formattedCat].quantidade += it.vendidas
+    })
+  })
   const listaCategorias = Object.values(categoriaMap).sort((a, b) => b.total - a.total)
   const maxCategoriaVal = Math.max(...listaCategorias.map((c) => c.total), 1)
 
@@ -213,6 +239,13 @@ export default function RelatoriosPage() {
       }
     }
     pagamentoMap[label].total += v.total
+    pagamentoMap[label].vendas++
+  })
+  acertosPeriodo.forEach((a) => {
+    const formaKey = a.formaPagamento || 'Outro'
+    const label = nomeFormaMap[formaKey] || formaKey.charAt(0).toUpperCase() + formaKey.slice(1)
+    if (!pagamentoMap[label]) pagamentoMap[label] = { forma: label, total: 0, vendas: 0 }
+    pagamentoMap[label].total += a.valorRecebido ?? 0
     pagamentoMap[label].vendas++
   })
 
@@ -249,6 +282,18 @@ export default function RelatoriosPage() {
     }))
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(produtosData), 'Produtos')
 
+    if (acertosPeriodo.length > 0) {
+      const acertosData = acertosPeriodo.map((a) => ({
+        'Data': formatDate(getDate(a.dataAcerto)),
+        'Cliente': a.clienteNome,
+        'Peças Vendidas': a.itens.reduce((s, it) => s + it.vendidas, 0),
+        'Peças Devolvidas': a.itens.reduce((s, it) => s + it.devolvidas, 0),
+        'Recebido (R$)': a.valorRecebido,
+        'Forma Pgto': a.formaPagamento,
+      }))
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(acertosData), 'Acertos Consignação')
+    }
+
     XLSX.writeFile(wb, `relatorio_${periodo}_${new Date().toISOString().split('T')[0]}.xlsx`)
     const { toast } = await import('sonner')
     toast.success('Arquivo Excel gerado!')
@@ -276,13 +321,13 @@ export default function RelatoriosPage() {
         <Card className="bg-card/45 backdrop-blur-sm border-border/80">
           <CardContent className="p-5 flex flex-col justify-between h-24">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Vendas no Período</span>
-            <span className="text-3xl font-extrabold font-mono tracking-tight text-foreground">{vendasPeriodo.length}</span>
+            <span className="text-3xl font-extrabold font-mono tracking-tight text-foreground">{totalTransacoes}</span>
           </CardContent>
         </Card>
         <Card className="bg-card/45 backdrop-blur-sm border-border/80">
           <CardContent className="p-5 flex flex-col justify-between h-24">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Faturado</span>
-            <span className="text-2xl font-extrabold font-mono tracking-tight text-blue-600 dark:text-blue-400">{formatCurrency(totalVendasPeriodo)}</span>
+            <span className="text-2xl font-extrabold font-mono tracking-tight text-blue-600 dark:text-blue-400">{formatCurrency(totalFaturadoPeriodo)}</span>
           </CardContent>
         </Card>
         <Card className="bg-card/45 backdrop-blur-sm border-border/80">
@@ -294,7 +339,7 @@ export default function RelatoriosPage() {
         <Card className="bg-card/45 backdrop-blur-sm border-border/80">
           <CardContent className="p-5 flex flex-col justify-between h-24">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Ticket Médio</span>
-            <span className="text-2xl font-extrabold font-mono tracking-tight text-foreground">{formatCurrency(vendasPeriodo.length > 0 ? totalVendasPeriodo / vendasPeriodo.length : 0)}</span>
+            <span className="text-2xl font-extrabold font-mono tracking-tight text-foreground">{formatCurrency(totalTransacoes > 0 ? totalFaturadoPeriodo / totalTransacoes : 0)}</span>
           </CardContent>
         </Card>
       </div>
@@ -837,7 +882,7 @@ export default function RelatoriosPage() {
               ) : (
                 <div className="space-y-4">
                   {listaCategorias.map((c) => {
-                    const percentTotal = totalVendasPeriodo > 0 ? (c.total / totalVendasPeriodo) * 100 : 0
+                    const percentTotal = totalFaturadoPeriodo > 0 ? (c.total / totalFaturadoPeriodo) * 100 : 0
                     const percBar = (c.total / maxCategoriaVal) * 100
                     return (
                       <div key={c.categoria} className="space-y-2 p-3.5 rounded-xl border bg-muted/5 border-border/60">
@@ -882,7 +927,7 @@ export default function RelatoriosPage() {
               ) : (
                 <div className="space-y-4">
                   {listaPagamentos.map((p) => {
-                    const percentTotal = totalVendasPeriodo > 0 ? (p.total / totalVendasPeriodo) * 100 : 0
+                    const percentTotal = totalFaturadoPeriodo > 0 ? (p.total / totalFaturadoPeriodo) * 100 : 0
                     const percBar = (p.total / maxPagamentoVal) * 100
                     return (
                       <div key={p.forma} className="space-y-2 p-3.5 rounded-xl border bg-muted/5 border-border/60">
