@@ -67,7 +67,8 @@ export default function EstoquePage() {
   // Reconhecimento de código de barras já cadastrado (entrada rápida de estoque)
   const [codigoExistente, setCodigoExistente] = useState<Produto | null>(null)
   const [entradaTamanho, setEntradaTamanho] = useState<Tamanho>('M')
-  const [entradaQtd, setEntradaQtd] = useState(1)
+  const [entradaQtdStr, setEntradaQtdStr] = useState('1')
+  const [modoEntrada, setModoEntrada] = useState<'somar' | 'definir'>('somar')
   const [savingEntrada, setSavingEntrada] = useState(false)
 
   const { data: produtos = [], isLoading } = useQuery({ queryKey: ['produtos'], queryFn: fetchProdutos })
@@ -189,7 +190,8 @@ export default function EstoquePage() {
     const existente = produtos.find((p) => p.codigoBarras === code && p.id !== editingProduto?.id)
     if (existente) {
       setEntradaTamanho('M')
-      setEntradaQtd(1)
+      setEntradaQtdStr('1')
+      setModoEntrada('somar')
       setCodigoExistente(existente)
       return
     }
@@ -199,27 +201,43 @@ export default function EstoquePage() {
 
   async function confirmarEntradaEstoque() {
     if (!codigoExistente) return
-    const qtd = Math.max(1, Math.floor(entradaQtd || 0))
+    const qtd = Math.max(0, Math.floor(Number(entradaQtdStr) || 0))
+    if (modoEntrada === 'somar' && qtd < 1) { toast.error('Informe a quantidade a adicionar'); return }
     const tam: Tamanho = usarTamanhos ? entradaTamanho : 'M'
+    // valor atual daquele tamanho (ou total, quando a loja não usa tamanhos)
+    const atualTam = usarTamanhos
+      ? (codigoExistente.estoque[tam] ?? 0)
+      : Object.values(codigoExistente.estoque).reduce((a, b) => a + b, 0)
+    const novoValor = modoEntrada === 'somar' ? atualTam + qtd : qtd
+    const delta = novoValor - atualTam
+
+    const novoEstoque = usarTamanhos
+      ? { ...codigoExistente.estoque, [tam]: novoValor }
+      : { PP: 0, P: 0, M: novoValor, G: 0, GG: 0, XGG: 0 }
+
     setSavingEntrada(true)
     try {
-      const novoEstoque = { ...codigoExistente.estoque }
-      novoEstoque[tam] = (novoEstoque[tam] ?? 0) + qtd
       await updateProduto(codigoExistente.id, { estoque: novoEstoque })
-      await insertMovimentacao({
-        produtoId: codigoExistente.id,
-        produtoNome: codigoExistente.nome,
-        tipo: 'entrada',
-        tamanho: tam,
-        quantidade: qtd,
-        motivo: 'Entrada por leitura de código',
-      })
+      if (delta !== 0) {
+        await insertMovimentacao({
+          produtoId: codigoExistente.id,
+          produtoNome: codigoExistente.nome,
+          tipo: delta > 0 ? 'entrada' : 'saida',
+          tamanho: tam,
+          quantidade: Math.abs(delta),
+          motivo: modoEntrada === 'somar' ? 'Entrada por leitura de código' : 'Ajuste de estoque (leitura)',
+        })
+      }
       qc.invalidateQueries({ queryKey: ['produtos'] })
-      toast.success(`+${qtd} un. em estoque — ${codigoExistente.nome}`)
+      toast.success(
+        modoEntrada === 'somar'
+          ? `+${qtd} un. — ${codigoExistente.nome} (total ${novoValor})`
+          : `Estoque definido em ${novoValor} — ${codigoExistente.nome}`
+      )
       setCodigoExistente(null)
       setDialogOpen(false)
     } catch {
-      toast.error('Erro ao dar entrada de estoque')
+      toast.error('Erro ao atualizar o estoque')
     } finally {
       setSavingEntrada(false)
     }
@@ -756,7 +774,14 @@ export default function EstoquePage() {
       <Dialog open={!!codigoExistente} onOpenChange={(v) => { if (!v) setCodigoExistente(null) }}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Produto já cadastrado</DialogTitle></DialogHeader>
-          {codigoExistente && (
+          {codigoExistente && (() => {
+            const qtdNum = Math.max(0, parseInt(entradaQtdStr || '0', 10))
+            const tam: Tamanho = usarTamanhos ? entradaTamanho : 'M'
+            const atualTam = usarTamanhos
+              ? (codigoExistente.estoque[tam] ?? 0)
+              : Object.values(codigoExistente.estoque).reduce((a, b) => a + b, 0)
+            const resultado = modoEntrada === 'somar' ? atualTam + qtdNum : qtdNum
+            return (
             <div className="space-y-4">
               <div className="flex items-center gap-3 rounded-xl border bg-muted/20 p-3">
                 <div className="h-12 w-12 shrink-0 rounded-lg bg-muted border flex items-center justify-center overflow-hidden">
@@ -770,9 +795,19 @@ export default function EstoquePage() {
                   <p className="text-[11px] text-muted-foreground">Em estoque: {Object.values(codigoExistente.estoque).reduce((a, b) => a + b, 0)} un.</p>
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Esse código de barras já existe. Confirme o item e a quantidade para dar entrada no estoque.
-              </p>
+
+              {/* Somar (padrão) ou Editar/definir a quantidade total */}
+              <div className="grid grid-cols-2 gap-1 rounded-lg border p-1 text-xs font-medium">
+                <button type="button" onClick={() => setModoEntrada('somar')}
+                  className={`rounded-md py-1.5 transition-colors ${modoEntrada === 'somar' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}>
+                  Somar ao estoque
+                </button>
+                <button type="button" onClick={() => setModoEntrada('definir')}
+                  className={`rounded-md py-1.5 transition-colors ${modoEntrada === 'definir' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}>
+                  Editar quantidade
+                </button>
+              </div>
+
               <div className={usarTamanhos ? 'grid grid-cols-2 gap-3' : ''}>
                 {usarTamanhos && (
                   <div className="space-y-1">
@@ -786,21 +821,34 @@ export default function EstoquePage() {
                   </div>
                 )}
                 <div className="space-y-1">
-                  <Label className="text-xs">Quantidade a adicionar</Label>
-                  <Input type="number" min="1" value={entradaQtd} onFocus={(e) => e.target.select()}
-                    onChange={(e) => setEntradaQtd(Number(e.target.value))} />
+                  <Label className="text-xs">{modoEntrada === 'somar' ? 'Quantidade a adicionar' : 'Nova quantidade total'}</Label>
+                  <Input type="text" inputMode="numeric" placeholder="Ex: 20" value={entradaQtdStr}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => setEntradaQtdStr(e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, ''))} />
                 </div>
               </div>
+
+              {/* Preview do resultado */}
+              <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs flex items-center justify-between">
+                <span className="text-muted-foreground">Estoque {usarTamanhos ? tam : 'total'}</span>
+                <span className="font-mono">
+                  <span className="text-foreground font-semibold">{atualTam}</span>
+                  <span className="text-muted-foreground"> → </span>
+                  <span className="text-green-600 dark:text-green-400 font-bold">{resultado}</span> un.
+                </span>
+              </div>
+
               <DialogFooter className="flex-col sm:flex-row gap-2">
                 <Button variant="outline" onClick={() => { setValue('codigoBarras', codigoExistente.codigoBarras ?? ''); setCodigoExistente(null) }}>
                   Só preencher o código
                 </Button>
-                <Button onClick={confirmarEntradaEstoque} disabled={savingEntrada || entradaQtd < 1}>
-                  {savingEntrada && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Dar entrada
+                <Button onClick={confirmarEntradaEstoque} disabled={savingEntrada || (modoEntrada === 'somar' && qtdNum < 1)}>
+                  {savingEntrada && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{modoEntrada === 'somar' ? 'Dar entrada' : 'Definir estoque'}
                 </Button>
               </DialogFooter>
             </div>
-          )}
+            )
+          })()}
         </DialogContent>
       </Dialog>
 
