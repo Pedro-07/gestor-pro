@@ -12,5 +12,7 @@ export function useAppConfig() {
     nomeApp: data?.nomeApp || 'Stok Master',
     logoUrl: data?.logoUrl || null,
     usarTamanhos: data?.usarTamanhos !== false,
+    usarFornecedor: data?.usarFornecedor === true,
+    usarObservacoes: data?.usarObservacoes === true,
   }
 }

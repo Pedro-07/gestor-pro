@@ -50,7 +50,7 @@ const produtoSchema = z.object({
 type ProdutoForm = z.infer<typeof produtoSchema>
 
 export default function EstoquePage() {
-  const { usarTamanhos } = useAppConfig()
+  const { usarTamanhos, usarFornecedor, usarObservacoes } = useAppConfig()
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [categoriaFilter, setCategoriaFilter] = useState('todas')
@@ -719,7 +719,9 @@ export default function EstoquePage() {
                   </Select>
                 )} />
               </div>
-              <div className="space-y-1"><Label>Fornecedor</Label><Combobox options={fornecedores.map((f) => ({ value: f.id, label: f.nome }))} value={selectedFornecedorId} onSelect={setSelectedFornecedorId} placeholder="Selecione o fornecedor" searchPlaceholder="Buscar..." emptyMessage="Não encontrado" /></div>
+              {usarFornecedor && (
+                <div className="space-y-1"><Label>Fornecedor</Label><Combobox options={fornecedores.map((f) => ({ value: f.id, label: f.nome }))} value={selectedFornecedorId} onSelect={setSelectedFornecedorId} placeholder="Selecione o fornecedor" searchPlaceholder="Buscar..." emptyMessage="Não encontrado" /></div>
+              )}
             </div>
 
             {/* Valores */}
@@ -750,7 +752,9 @@ export default function EstoquePage() {
               </div>
             )}
 
-            <div className="space-y-1"><Label>Descrição / Detalhes</Label><Textarea rows={2} {...register('descricao')} /></div>
+            {usarObservacoes && (
+              <div className="space-y-1"><Label>Descrição / Observações</Label><Textarea rows={2} {...register('descricao')} /></div>
+            )}
 
             <DialogFooter className="flex-col sm:flex-row gap-2">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>

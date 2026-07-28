@@ -166,7 +166,9 @@ CREATE TABLE config (
   "templateConfirmacaoPagamento" TEXT NOT NULL DEFAULT '',
   "nomeApp" TEXT DEFAULT 'Stok Master',
   "logoUrl" TEXT,
-  "usarTamanhos" BOOLEAN DEFAULT TRUE
+  "usarTamanhos" BOOLEAN DEFAULT TRUE,
+  "usarFornecedor" BOOLEAN DEFAULT FALSE,
+  "usarObservacoes" BOOLEAN DEFAULT FALSE
 );
 
 -- ─── INDEXES ─────────────────────────────────────────────────────────────────

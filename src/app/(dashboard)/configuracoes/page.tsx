@@ -32,7 +32,7 @@ export default function ConfiguracoesPage() {
   const { data: config, isLoading } = useQuery({ queryKey: ['config'], queryFn: fetchConfig })
 
   const { register, handleSubmit, reset, watch, setValue, control } = useForm<Configuracoes>({
-    defaultValues: { ...defaultTemplates, nomeVendedor: '', telefoneVendedor: '', nomeApp: 'Stok Master', usarTamanhos: true },
+    defaultValues: { ...defaultTemplates, nomeVendedor: '', telefoneVendedor: '', nomeApp: 'Stok Master', usarTamanhos: true, usarFornecedor: false, usarObservacoes: false },
   })
 
   useEffect(() => {
@@ -45,6 +45,8 @@ export default function ConfiguracoesPage() {
         templateInadimplente: config.templateInadimplente || defaultTemplates.templateInadimplente,
         templateConfirmacaoPagamento: config.templateConfirmacaoPagamento || defaultTemplates.templateConfirmacaoPagamento,
         usarTamanhos: config.usarTamanhos !== false,
+        usarFornecedor: config.usarFornecedor === true,
+        usarObservacoes: config.usarObservacoes === true,
       })
       if (config.logoUrl) setPreviewUrl(config.logoUrl)
     }
@@ -77,12 +79,12 @@ export default function ConfiguracoesPage() {
     <div className="max-w-4xl space-y-4">
       <form onSubmit={handleSubmit(onSubmit)}>
         <Tabs defaultValue="geral">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-            <TabsList>
-              <TabsTrigger value="geral"><Store className="h-4 w-4 mr-2" />Geral & Loja</TabsTrigger>
-              <TabsTrigger value="whatsapp"><MessageSquare className="h-4 w-4 mr-2" />Mensagens WhatsApp</TabsTrigger>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+            <TabsList className="grid grid-cols-2 w-full sm:inline-flex sm:w-auto">
+              <TabsTrigger value="geral"><Store className="h-4 w-4 mr-2 shrink-0" /><span className="truncate">Geral & Loja</span></TabsTrigger>
+              <TabsTrigger value="whatsapp"><MessageSquare className="h-4 w-4 mr-2 shrink-0" /><span className="truncate">WhatsApp</span></TabsTrigger>
             </TabsList>
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" disabled={saving} className="w-full sm:w-auto">
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
               Salvar Alterações
             </Button>
@@ -92,7 +94,7 @@ export default function ConfiguracoesPage() {
             <Card>
               <CardHeader><CardTitle>Identidade Visual</CardTitle><CardDescription>Logo e nome que aparecerão no sistema.</CardDescription></CardHeader>
               <CardContent className="space-y-6">
-                <div className="flex items-center gap-6">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
                   <div className="w-24 h-24 bg-muted border-2 border-dashed rounded-xl flex items-center justify-center overflow-hidden relative shrink-0">
                     {previewUrl ? <Image src={previewUrl} alt="Logo" fill className="object-contain p-1" /> : <UploadCloud className="h-6 w-6 text-muted-foreground opacity-50" />}
                     <input type="file" accept="image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={(e) => { const file = e.target.files?.[0]; if (file) { setLogoFile(file); setPreviewUrl(URL.createObjectURL(file)) } }} />
@@ -128,6 +130,23 @@ export default function ConfiguracoesPage() {
                     )}
                   />
                   <p className="text-xs text-muted-foreground">Se desativado, o sistema simplifica o cadastro e as vendas de produtos ocultando as opções de tamanho.</p>
+                </div>
+
+                <div className="space-y-2 pt-4 border-t">
+                  <Label>Campos do cadastro de produtos</Label>
+                  <p className="text-xs text-muted-foreground">Escolha quais campos opcionais aparecem ao cadastrar/editar um produto.</p>
+                  <Controller name="usarFornecedor" control={control} render={({ field }) => (
+                    <label className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
+                      <input type="checkbox" checked={!!field.value} onChange={(e) => field.onChange(e.target.checked)} className="mt-0.5 h-4 w-4 accent-blue-600 shrink-0" />
+                      <div><p className="text-sm font-medium">Mostrar campo &quot;Fornecedor&quot;</p><p className="text-xs text-muted-foreground">Exibe a seleção de fornecedor no cadastro de produtos.</p></div>
+                    </label>
+                  )} />
+                  <Controller name="usarObservacoes" control={control} render={({ field }) => (
+                    <label className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
+                      <input type="checkbox" checked={!!field.value} onChange={(e) => field.onChange(e.target.checked)} className="mt-0.5 h-4 w-4 accent-blue-600 shrink-0" />
+                      <div><p className="text-sm font-medium">Mostrar campo &quot;Observações&quot;</p><p className="text-xs text-muted-foreground">Exibe o campo de descrição/observações no cadastro de produtos.</p></div>
+                    </label>
+                  )} />
                 </div>
               </CardContent>
             </Card>

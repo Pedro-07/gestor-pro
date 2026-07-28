@@ -205,4 +205,6 @@ export interface Configuracoes {
   nomeApp?: string
   logoUrl?: string
   usarTamanhos?: boolean
+  usarFornecedor?: boolean
+  usarObservacoes?: boolean
 }
