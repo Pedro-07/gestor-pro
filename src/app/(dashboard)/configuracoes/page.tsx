@@ -79,16 +79,10 @@ export default function ConfiguracoesPage() {
     <div className="max-w-4xl space-y-4">
       <form onSubmit={handleSubmit(onSubmit)}>
         <Tabs defaultValue="geral">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-            <TabsList className="grid grid-cols-2 w-full sm:inline-flex sm:w-auto">
-              <TabsTrigger value="geral"><Store className="h-4 w-4 mr-2 shrink-0" /><span className="truncate">Geral & Loja</span></TabsTrigger>
-              <TabsTrigger value="whatsapp"><MessageSquare className="h-4 w-4 mr-2 shrink-0" /><span className="truncate">WhatsApp</span></TabsTrigger>
-            </TabsList>
-            <Button type="submit" disabled={saving} className="w-full sm:w-auto">
-              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              Salvar Alterações
-            </Button>
-          </div>
+          <TabsList className="grid grid-cols-2 w-full sm:inline-flex sm:w-auto mb-4">
+            <TabsTrigger value="geral"><Store className="h-4 w-4 mr-2 shrink-0" /><span className="truncate">Geral & Loja</span></TabsTrigger>
+            <TabsTrigger value="whatsapp"><MessageSquare className="h-4 w-4 mr-2 shrink-0" /><span className="truncate">WhatsApp</span></TabsTrigger>
+          </TabsList>
 
           <TabsContent value="geral" className="space-y-4">
             <Card>
@@ -164,6 +158,13 @@ export default function ConfiguracoesPage() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          <div className="flex justify-end pt-2">
+            <Button type="submit" disabled={saving} className="w-full sm:w-auto">
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Salvar Alterações
+            </Button>
+          </div>
         </Tabs>
       </form>
     </div>
