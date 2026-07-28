@@ -78,7 +78,7 @@ export default function ConfiguracoesPage() {
   return (
     <div className="max-w-4xl space-y-4">
       <form onSubmit={handleSubmit(onSubmit)}>
-        <Tabs defaultValue="geral">
+        <Tabs defaultValue="geral" className="flex flex-col">
           <TabsList className="grid grid-cols-2 w-full sm:inline-flex sm:w-auto mb-4">
             <TabsTrigger value="geral"><Store className="h-4 w-4 mr-2 shrink-0" /><span className="truncate">Geral & Loja</span></TabsTrigger>
             <TabsTrigger value="whatsapp"><MessageSquare className="h-4 w-4 mr-2 shrink-0" /><span className="truncate">WhatsApp</span></TabsTrigger>
