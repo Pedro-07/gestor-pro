@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Plus, Search, MoreVertical, Pencil, Trash2, MessageCircle, AlertTriangle, Eye, Loader2 } from 'lucide-react'
+import { Plus, Search, MoreVertical, Pencil, Trash2, MessageCircle, AlertTriangle, Eye, Loader2, Ban, Power } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { buildWhatsAppUrl, formatPhone, formatCPFCNPJ } from '@/lib/utils'
 
@@ -129,14 +129,31 @@ export default function ClientesPage() {
     }
   }
 
+  async function handleToggleInativo(c: Cliente) {
+    const novoStatus = c.status === 'inativo' ? 'ativo' : 'inativo'
+    try {
+      await updateCliente(c.id, { status: novoStatus })
+      qc.invalidateQueries({ queryKey: ['clientes'] })
+      toast.success(novoStatus === 'inativo' ? 'Cliente inativado' : 'Cliente reativado')
+    } catch {
+      toast.error('Erro ao atualizar o cliente')
+    }
+  }
+
   async function handleDelete(c: Cliente) {
     try {
       await deleteCliente(c.id)
       qc.invalidateQueries({ queryKey: ['clientes'] })
       toast.success('Cliente excluído')
       setDeleteDialog(null)
-    } catch {
-      toast.error('Erro ao excluir')
+    } catch (err) {
+      const code = (err as { code?: string })?.code
+      if (code === '23503') {
+        toast.error('Este cliente tem histórico (vendas/parcelas) e não pode ser excluído. Use "Inativar".')
+        setDeleteDialog(null)
+      } else {
+        toast.error('Erro ao excluir')
+      }
     }
   }
 
@@ -222,6 +239,9 @@ export default function ClientesPage() {
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => openEdit(c)}>
                           <Pencil className="mr-2 h-4 w-4" />Editar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleToggleInativo(c)}>
+                          {c.status === 'inativo' ? <><Power className="mr-2 h-4 w-4 text-green-600" />Reativar</> : <><Ban className="mr-2 h-4 w-4" />Inativar</>}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem className="text-destructive" onClick={() => setDeleteDialog(c)}>
@@ -350,6 +370,7 @@ export default function ClientesPage() {
           <p className="text-sm text-muted-foreground">
             Tem certeza que deseja excluir <strong>{deleteDialog?.nome}</strong>? Esta ação não pode ser desfeita.
           </p>
+          <p className="text-xs text-muted-foreground">Clientes com histórico (vendas/parcelas) não podem ser excluídos — use <strong>Inativar</strong> para preservar o histórico.</p>
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button variant="outline" onClick={() => setDeleteDialog(null)}>Cancelar</Button>
             <Button variant="destructive" onClick={() => deleteDialog && handleDelete(deleteDialog)}>Excluir</Button>

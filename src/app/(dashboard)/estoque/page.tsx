@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchProdutos, fetchFornecedores, insertProduto, updateProduto, deleteProduto, uploadFile, fetchVendas, fetchMovimentacoesByProduto, insertMovimentacao } from '@/lib/database'
+import { fetchProdutos, fetchFornecedores, insertProduto, updateProduto, deleteProduto, setProdutoAtivo, uploadFile, fetchVendas, fetchMovimentacoesByProduto, insertMovimentacao } from '@/lib/database'
 import type { Produto, CategoriaProduto, Fornecedor, Tamanho } from '@/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useForm, Controller, type Resolver } from 'react-hook-form'
@@ -23,7 +23,7 @@ import { Badge } from '@/components/ui/badge'
 import { Combobox } from '@/components/shared/combobox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Plus, Search, MoreVertical, Pencil, Trash2, Package, UploadCloud, Loader2, Image as ImageIcon, History, TrendingUp, Info, ArrowUpRight } from 'lucide-react'
+import { Plus, Search, MoreVertical, Pencil, Trash2, Package, UploadCloud, Loader2, Image as ImageIcon, History, TrendingUp, Info, ArrowUpRight, Ban, Power } from 'lucide-react'
 import Image from 'next/image'
 import { BarcodeScanner } from '@/components/shared/barcode-scanner'
 
@@ -144,6 +144,16 @@ export default function EstoquePage() {
         XGG: 0
       }
 
+      // Ao CADASTRAR (produto novo), a quantidade não pode ser zero.
+      if (!editingProduto) {
+        const totalEstoque = Object.values(estoqueFinal).reduce((a, b) => a + (b || 0), 0)
+        if (totalEstoque < 1) {
+          toast.error('Informe ao menos 1 unidade em estoque para cadastrar.')
+          setSaving(false)
+          return
+        }
+      }
+
       const payload = {
         ...data,
         estoque: estoqueFinal,
@@ -175,8 +185,26 @@ export default function EstoquePage() {
       qc.invalidateQueries({ queryKey: ['produtos'] })
       toast.success('Produto excluído')
       setDeleteDialog(null)
+    } catch (err) {
+      // 23503 = violação de FK (produto tem movimentações) → não pode excluir
+      const code = (err as { code?: string })?.code
+      if (code === '23503') {
+        toast.error('Este produto tem histórico de movimentações e não pode ser excluído. Use "Desativar".')
+        setDeleteDialog(null)
+      } else {
+        toast.error('Erro ao excluir')
+      }
+    }
+  }
+
+  async function handleToggleAtivo(p: Produto) {
+    const novoAtivo = p.ativo === false
+    try {
+      await setProdutoAtivo(p.id, novoAtivo)
+      qc.invalidateQueries({ queryKey: ['produtos'] })
+      toast.success(novoAtivo ? 'Produto reativado' : 'Produto desativado')
     } catch {
-      toast.error('Erro ao excluir')
+      toast.error('Erro ao atualizar o produto')
     }
   }
 
@@ -288,7 +316,7 @@ export default function EstoquePage() {
 
                   {/* Infos centrais */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold leading-tight truncate">{p.nome}</p>
+                    <p className="text-sm font-semibold leading-tight truncate">{p.nome}{p.ativo === false && <span className="ml-1.5 text-[9px] font-bold uppercase text-muted-foreground bg-muted px-1 py-0.5 rounded">Inativo</span>}</p>
                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                       <span className="font-mono text-[10px] text-muted-foreground bg-muted px-1 py-0.5 rounded">{p.codigo}</span>
                       <span className="text-[10px] text-muted-foreground capitalize">{p.categoria}</span>
@@ -312,6 +340,9 @@ export default function EstoquePage() {
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => openEdit(p)}>
                         <Pencil className="mr-2 h-4 w-4" />Editar
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleToggleAtivo(p)}>
+                        {p.ativo === false ? <><Power className="mr-2 h-4 w-4 text-green-600" />Reativar</> : <><Ban className="mr-2 h-4 w-4" />Desativar</>}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem className="text-destructive" onClick={() => setDeleteDialog(p)}>
@@ -348,7 +379,7 @@ export default function EstoquePage() {
                           {p.codigo}
                         </TableCell>
                         <TableCell>
-                          <div className="font-medium text-sm leading-none">{p.nome}</div>
+                          <div className="font-medium text-sm leading-none">{p.nome}{p.ativo === false && <span className="ml-1.5 text-[9px] font-bold uppercase text-muted-foreground bg-muted px-1 py-0.5 rounded">Inativo</span>}</div>
                           {p.codigoBarras && <span className="text-[10px] text-muted-foreground font-mono">EAN: {p.codigoBarras}</span>}
                         </TableCell>
                         <TableCell className="capitalize text-xs text-muted-foreground hidden md:table-cell">
@@ -393,6 +424,9 @@ export default function EstoquePage() {
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => openEdit(p)}>
                                 <Pencil className="mr-2 h-4 w-4" />Editar
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleToggleAtivo(p)}>
+                                {p.ativo === false ? <><Power className="mr-2 h-4 w-4 text-green-600" />Reativar</> : <><Ban className="mr-2 h-4 w-4" />Desativar</>}
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem className="text-destructive" onClick={() => setDeleteDialog(p)}>
@@ -850,6 +884,7 @@ export default function EstoquePage() {
         <DialogContent>
           <DialogHeader><DialogTitle>Excluir produto?</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">Tem certeza que deseja excluir <strong>{deleteDialog?.nome}</strong>?</p>
+          <p className="text-xs text-muted-foreground">Produtos com histórico de movimentações não podem ser excluídos — nesse caso, use <strong>Desativar</strong> para preservar o histórico.</p>
           <DialogFooter><Button variant="outline" onClick={() => setDeleteDialog(null)}>Cancelar</Button><Button variant="destructive" onClick={() => deleteDialog && handleDelete(deleteDialog)}>Excluir</Button></DialogFooter>
         </DialogContent>
       </Dialog>

@@ -62,6 +62,7 @@ export interface Produto {
   estoque: EstoquePorTamanho
   fotoUrl?: string
   codigoBarras?: string
+  ativo?: boolean
   fornecedorId?: string
   fornecedorNome?: string
   createdAt: string

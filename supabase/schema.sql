@@ -61,6 +61,7 @@ CREATE TABLE produtos (
   estoque JSONB NOT NULL DEFAULT '{"PP":0,"P":0,"M":0,"G":0,"GG":0,"XGG":0}',
   "fotoUrl" TEXT,
   "codigoBarras" TEXT,
+  ativo BOOLEAN NOT NULL DEFAULT TRUE,
   "fornecedorId" UUID REFERENCES fornecedores(id) ON DELETE SET NULL,
   "fornecedorNome" TEXT,
   "createdAt" TIMESTAMPTZ DEFAULT now(),

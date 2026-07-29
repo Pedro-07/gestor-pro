@@ -87,6 +87,12 @@ export async function deleteProduto(id: string) {
   if (error) throw error
 }
 
+/** Ativa/desativa um produto (soft delete — preserva o histórico de movimentações). */
+export async function setProdutoAtivo(id: string, ativo: boolean) {
+  const { error } = await supabase.from('produtos').update({ ativo }).eq('id', id)
+  if (error) throw error
+}
+
 // ─── VENDAS ──────────────────────────────────────────────────────────────────
 
 export async function fetchVendas(): Promise<Venda[]> {

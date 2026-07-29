@@ -64,6 +64,7 @@ export default function PDVPage() {
 
   const filtered = produtos
     .filter((p) => {
+      if (p.ativo === false) return false
       const hasStock = Object.values(p.estoque).some((q) => q > 0)
       if (!hasStock) return false
       if (!search.trim()) return true
@@ -81,6 +82,10 @@ export default function PDVPage() {
     if (!produto) {
       toast.error(`Produto não encontrado: ${code}`)
       setSearch(code)
+      return
+    }
+    if (produto.ativo === false) {
+      toast.error(`${produto.nome} está desativado`)
       return
     }
     const tamanho = usarTamanhos
