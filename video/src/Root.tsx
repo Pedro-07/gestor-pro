@@ -1,7 +1,7 @@
 import React from 'react'
 import { Composition } from 'remotion'
 import { Tutorial, framesFor, FPS, type Chapters } from './Tutorial'
-import { TutorialMobile, mFramesFor, M_FPS } from './TutorialMobile'
+import { TutorialMobilePro, mpFramesFor, MP_FPS } from './TutorialMobilePro'
 import { SECTIONS } from './sections'
 
 import ch_pdv from '../public/chapters-pdv.json'
@@ -41,9 +41,9 @@ export const RemotionRoot: React.FC = () => (
         />
         <Composition
           id={`${s.id}-mobile`}
-          component={TutorialMobile}
-          durationInFrames={mFramesFor(CH[s.id].m)}
-          fps={M_FPS}
+          component={TutorialMobilePro}
+          durationInFrames={mpFramesFor(CH[s.id].m)}
+          fps={MP_FPS}
           width={1080}
           height={1920}
           defaultProps={{ src: `${s.id}-mobile.webm`, title: s.title, subtitle: s.subtitle, chapters: CH[s.id].m }}
