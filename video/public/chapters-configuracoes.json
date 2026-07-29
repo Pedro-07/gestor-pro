@@ -1,0 +1,35 @@
+{
+  "videoDurationMs": 19418,
+  "captions": [
+    {
+      "caption": "Configurações: ajuste o sistema do seu jeito.",
+      "startMs": 7252,
+      "endMs": 9468
+    },
+    {
+      "caption": "Em Preferências, escolha os campos do cadastro de produtos.",
+      "startMs": 9468,
+      "endMs": 11479
+    },
+    {
+      "caption": "Marque para exibir o campo Fornecedor.",
+      "startMs": 11479,
+      "endMs": 13167
+    },
+    {
+      "caption": "Ou o campo Observações — do jeito que preferir.",
+      "startMs": 13167,
+      "endMs": 14732
+    },
+    {
+      "caption": "No final, toque em Salvar Alterações.",
+      "startMs": 14732,
+      "endMs": 16715
+    },
+    {
+      "caption": "Configurações salvas! ✅",
+      "startMs": 16715,
+      "endMs": 19118
+    }
+  ]
+}

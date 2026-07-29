@@ -1,0 +1,35 @@
+{
+  "videoDurationMs": 18166,
+  "captions": [
+    {
+      "caption": "Consignações: peças que você entregou a um lojista.",
+      "startMs": 5665,
+      "endMs": 7881
+    },
+    {
+      "caption": "Cada card mostra vendidas, devolvidas e o que está pendente.",
+      "startMs": 7882,
+      "endMs": 10083
+    },
+    {
+      "caption": "Toque em Acertar contas para prestar contas.",
+      "startMs": 10083,
+      "endMs": 11872
+    },
+    {
+      "caption": "Informe quantas peças o lojista vendeu.",
+      "startMs": 11872,
+      "endMs": 13559
+    },
+    {
+      "caption": "Confira o valor a receber e registre o acerto.",
+      "startMs": 13559,
+      "endMs": 15454
+    },
+    {
+      "caption": "Acerto feito — o recebido entra nos relatórios. ✅",
+      "startMs": 15454,
+      "endMs": 17866
+    }
+  ]
+}

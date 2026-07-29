@@ -1,0 +1,27 @@
+{
+  "name": "stokmaster-video-tutoriais",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pipeline de video-tutoriais: Playwright grava o app real + Remotion legenda.",
+  "scripts": {
+    "seed": "node capture/seed.mjs",
+    "capture": "node capture/record-all.mjs",
+    "render": "node capture/render-all.mjs",
+    "cleanup": "node capture/cleanup.mjs",
+    "studio": "remotion studio",
+    "make": "npm run seed && npm run capture && npm run render"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "@remotion/media-utils": "^4.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "^2.108.2",
+    "@types/react": "^18",
+    "playwright": "^1.48.0",
+    "typescript": "^5"
+  }
+}

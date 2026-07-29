@@ -1,0 +1,40 @@
+{
+  "videoDurationMs": 19288,
+  "captions": [
+    {
+      "caption": "No Estoque você vê todos os produtos e o giro de cada um.",
+      "startMs": 4393,
+      "endMs": 6600
+    },
+    {
+      "caption": "Toque em Novo Produto para cadastrar.",
+      "startMs": 6600,
+      "endMs": 8343
+    },
+    {
+      "caption": "Dê um nome ao produto (o código é gerado sozinho).",
+      "startMs": 8343,
+      "endMs": 11425
+    },
+    {
+      "caption": "Informe o preço de custo e o de venda.",
+      "startMs": 11425,
+      "endMs": 13134
+    },
+    {
+      "caption": "Defina a quantidade em estoque.",
+      "startMs": 13134,
+      "endMs": 14565
+    },
+    {
+      "caption": "Toque em Salvar Produto.",
+      "startMs": 14565,
+      "endMs": 16583
+    },
+    {
+      "caption": "Pronto! Produto cadastrado no estoque. ✅",
+      "startMs": 16583,
+      "endMs": 18988
+    }
+  ]
+}

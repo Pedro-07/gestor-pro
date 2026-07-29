@@ -1,0 +1,50 @@
+{
+  "videoDurationMs": 25765,
+  "captions": [
+    {
+      "caption": "Ponto de Venda: a tela começa limpa — só a busca e o leitor azul.",
+      "startMs": 5847,
+      "endMs": 8059
+    },
+    {
+      "caption": "Busque o produto pelo nome, código ou EAN.",
+      "startMs": 8059,
+      "endMs": 10471
+    },
+    {
+      "caption": "Toque no botão de carrinho para adicionar ao pedido.",
+      "startMs": 10471,
+      "endMs": 12100
+    },
+    {
+      "caption": "O item entra no carrinho já com quantidade 1.",
+      "startMs": 12100,
+      "endMs": 13519
+    },
+    {
+      "caption": "Adicione outros produtos do mesmo jeito.",
+      "startMs": 13519,
+      "endMs": 16774
+    },
+    {
+      "caption": "Toque em Finalizar para ir ao checkout.",
+      "startMs": 16775,
+      "endMs": 18428
+    },
+    {
+      "caption": "Escolha o cliente e a forma de pagamento.",
+      "startMs": 18428,
+      "endMs": 21199
+    },
+    {
+      "caption": "Confirme — o estoque baixa automaticamente.",
+      "startMs": 21199,
+      "endMs": 22864
+    },
+    {
+      "caption": "Pronto! Venda registrada. ✅",
+      "startMs": 22864,
+      "endMs": 25465
+    }
+  ]
+}

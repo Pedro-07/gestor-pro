@@ -1,0 +1,25 @@
+{
+  "videoDurationMs": 17061,
+  "captions": [
+    {
+      "caption": "Aqui ficam todas as suas vendas registradas.",
+      "startMs": 5522,
+      "endMs": 7724
+    },
+    {
+      "caption": "Filtre rapidamente por cliente.",
+      "startMs": 7724,
+      "endMs": 10002
+    },
+    {
+      "caption": "Abra uma venda para ver os detalhes.",
+      "startMs": 10002,
+      "endMs": 13948
+    },
+    {
+      "caption": "Veja itens, valores e forma de pagamento — e edite ou cancele se precisar.",
+      "startMs": 13948,
+      "endMs": 16761
+    }
+  ]
+}

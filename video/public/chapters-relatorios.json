@@ -1,0 +1,35 @@
+{
+  "videoDurationMs": 21117,
+  "captions": [
+    {
+      "caption": "Relatórios: uma visão geral do seu negócio.",
+      "startMs": 7833,
+      "endMs": 10046
+    },
+    {
+      "caption": "No topo, os números do período: faturado, recebido e ticket médio.",
+      "startMs": 10046,
+      "endMs": 12465
+    },
+    {
+      "caption": "Toque nos cards para abrir cada relatório.",
+      "startMs": 12465,
+      "endMs": 14254
+    },
+    {
+      "caption": "Veja o ranking dos produtos mais vendidos.",
+      "startMs": 14254,
+      "endMs": 16468
+    },
+    {
+      "caption": "Explore também formas de pagamento e categorias.",
+      "startMs": 16468,
+      "endMs": 18411
+    },
+    {
+      "caption": "E exporte tudo em Excel quando quiser. ✅",
+      "startMs": 18411,
+      "endMs": 20817
+    }
+  ]
+}
