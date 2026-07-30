@@ -40,7 +40,8 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname()
   const { isOpen, isCollapsed, setOpen, toggleCollapsed } = useSidebarStore()
-  const { nomeApp, logoUrl } = useAppConfig()
+  const { nomeApp, logoUrl, usarFornecedor } = useAppConfig()
+  const items = navItems.filter((i) => i.href !== '/fornecedores' || usarFornecedor)
 
   return (
     <>
@@ -102,7 +103,7 @@ export function Sidebar() {
         {/* Nav */}
         <nav className="flex-1 py-4 overflow-y-auto">
           <ul className="space-y-1 px-2">
-            {navItems.map((item) => {
+            {items.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
               return (

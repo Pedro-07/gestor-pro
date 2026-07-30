@@ -28,11 +28,12 @@ export default function ConfiguracoesPage() {
   const [saving, setSaving] = useState(false)
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [novoTamanho, setNovoTamanho] = useState('')
 
   const { data: config, isLoading } = useQuery({ queryKey: ['config'], queryFn: fetchConfig })
 
   const { register, handleSubmit, reset, watch, setValue, control } = useForm<Configuracoes>({
-    defaultValues: { ...defaultTemplates, nomeVendedor: '', telefoneVendedor: '', nomeApp: 'Stok Master', usarTamanhos: true, usarFornecedor: false, usarObservacoes: false },
+    defaultValues: { ...defaultTemplates, nomeVendedor: '', telefoneVendedor: '', nomeApp: 'Stok Master', usarTamanhos: true, usarFornecedor: false, usarObservacoes: false, tamanhos: ['PP', 'P', 'M', 'G', 'GG', 'XGG'] },
   })
 
   useEffect(() => {
@@ -47,6 +48,7 @@ export default function ConfiguracoesPage() {
         usarTamanhos: config.usarTamanhos !== false,
         usarFornecedor: config.usarFornecedor === true,
         usarObservacoes: config.usarObservacoes === true,
+        tamanhos: config.tamanhos && config.tamanhos.length ? config.tamanhos : ['PP', 'P', 'M', 'G', 'GG', 'XGG'],
       })
       if (config.logoUrl) setPreviewUrl(config.logoUrl)
     }
@@ -109,21 +111,50 @@ export default function ConfiguracoesPage() {
               <CardHeader><CardTitle>Preferências do Sistema</CardTitle><CardDescription>Personalize o funcionamento do painel de controle.</CardDescription></CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Grade de Tamanhos no Estoque</Label>
-                  <Controller
-                    name="usarTamanhos"
-                    control={control}
-                    render={({ field }) => (
-                      <Select value={field.value ? "true" : "false"} onValueChange={(v) => field.onChange(v === "true")}>
-                        <SelectTrigger className="w-full md:w-[380px]"><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="true">Ativado (Grade de tamanhos: PP, P, M, G, GG, XGG)</SelectItem>
-                          <SelectItem value="false">Desativado (Estoque único global por produto)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                  <p className="text-xs text-muted-foreground">Se desativado, o sistema simplifica o cadastro e as vendas de produtos ocultando as opções de tamanho.</p>
+                  <Label>Grade de tamanhos no estoque</Label>
+                  <Controller name="usarTamanhos" control={control} render={({ field }) => (
+                    <label className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
+                      <input type="checkbox" checked={!!field.value} onChange={(e) => field.onChange(e.target.checked)} className="mt-0.5 h-4 w-4 accent-blue-600 shrink-0" />
+                      <div><p className="text-sm font-medium">Usar grade de tamanhos</p><p className="text-xs text-muted-foreground">Se desmarcado, o estoque é único por produto (sem tamanhos).</p></div>
+                    </label>
+                  )} />
+
+                  {watch('usarTamanhos') && (
+                    <Controller name="tamanhos" control={control} render={({ field }) => {
+                      const sizes: string[] = field.value ?? []
+                      const setSizes = (s: string[]) => field.onChange(s)
+                      const addSize = () => {
+                        const v = novoTamanho.trim().toUpperCase()
+                        if (v && !sizes.includes(v)) setSizes([...sizes, v])
+                        setNovoTamanho('')
+                      }
+                      return (
+                        <div className="space-y-2 rounded-lg border p-3 mt-1">
+                          <p className="text-xs text-muted-foreground">Escolha os tamanhos que a sua loja usa (letras ou números). Use um preset ou monte a sua lista.</p>
+                          <div className="flex flex-wrap gap-2">
+                            <Button type="button" variant="outline" size="sm" onClick={() => setSizes(['PP', 'P', 'M', 'G', 'GG', 'XGG'])}>Letras (PP–XGG)</Button>
+                            <Button type="button" variant="outline" size="sm" onClick={() => setSizes(['36', '38', '40', '42', '44', '46'])}>Números (36–46)</Button>
+                            <Button type="button" variant="outline" size="sm" onClick={() => setSizes(['34', '36', '38', '40', '42', '44'])}>Calçados (34–44)</Button>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 min-h-8">
+                            {sizes.length === 0 && <span className="text-xs text-muted-foreground">Nenhum tamanho — adicione abaixo.</span>}
+                            {sizes.map((t) => (
+                              <span key={t} className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs font-semibold">
+                                {t}
+                                <button type="button" onClick={() => setSizes(sizes.filter((x) => x !== t))} className="text-muted-foreground hover:text-destructive">×</button>
+                              </span>
+                            ))}
+                          </div>
+                          <div className="flex gap-2">
+                            <Input value={novoTamanho} onChange={(e) => setNovoTamanho(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSize() } }}
+                              placeholder="Ex: XG, 48, 38/40..." className="flex-1 h-9" />
+                            <Button type="button" variant="secondary" size="sm" onClick={addSize} disabled={!novoTamanho.trim()}>Adicionar</Button>
+                          </div>
+                        </div>
+                      )
+                    }} />
+                  )}
                 </div>
 
                 <div className="space-y-2 pt-4 border-t">

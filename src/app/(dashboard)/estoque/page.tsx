@@ -27,8 +27,6 @@ import { Plus, Search, MoreVertical, Pencil, Trash2, Package, UploadCloud, Loade
 import Image from 'next/image'
 import { BarcodeScanner } from '@/components/shared/barcode-scanner'
 
-const TAMANHOS = ['PP', 'P', 'M', 'G', 'GG', 'XGG'] as const
-
 const produtoSchema = z.object({
   codigo: z.string().min(1, 'Código obrigatório'),
   nome: z.string().min(2, 'Nome obrigatório'),
@@ -36,21 +34,15 @@ const produtoSchema = z.object({
   categoria: z.enum(['camiseta', 'calca', 'vestido', 'saia', 'blusa', 'short', 'jaqueta', 'conjunto', 'outro']),
   precoCusto: z.coerce.number().min(0, 'Valor inválido'),
   precoVenda: z.coerce.number().min(0, 'Valor inválido'),
-  estoque: z.object({
-    PP: z.coerce.number().min(0).default(0),
-    P: z.coerce.number().min(0).default(0),
-    M: z.coerce.number().min(0).default(0),
-    G: z.coerce.number().min(0).default(0),
-    GG: z.coerce.number().min(0).default(0),
-    XGG: z.coerce.number().min(0).default(0),
-  }),
+  // Tamanhos são dinâmicos (definidos em Configurações) → estoque é um mapa livre.
+  estoque: z.record(z.string(), z.coerce.number().min(0)).default({}),
   codigoBarras: z.string().optional(),
 })
 
 type ProdutoForm = z.infer<typeof produtoSchema>
 
 export default function EstoquePage() {
-  const { usarTamanhos, usarFornecedor, usarObservacoes } = useAppConfig()
+  const { usarTamanhos, usarFornecedor, usarObservacoes, tamanhos } = useAppConfig()
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [categoriaFilter, setCategoriaFilter] = useState('todas')
@@ -90,7 +82,7 @@ export default function EstoquePage() {
 
   const { register, handleSubmit, reset, setValue, control, formState: { errors } } = useForm<ProdutoForm>({
     resolver: zodResolver(produtoSchema) as unknown as Resolver<ProdutoForm>,
-    defaultValues: { categoria: 'outro', estoque: { PP: 0, P: 0, M: 0, G: 0, GG: 0, XGG: 0 } },
+    defaultValues: { categoria: 'outro', estoque: Object.fromEntries(tamanhos.map((t) => [t, 0])) },
   })
 
   function generateCodigo() {
@@ -105,7 +97,7 @@ export default function EstoquePage() {
     reset({
       codigo: generateCodigo(),
       categoria: 'outro',
-      estoque: { PP: 0, P: 0, M: 0, G: 0, GG: 0, XGG: 0 },
+      estoque: Object.fromEntries(tamanhos.map((t) => [t, 0])),
     })
     setDialogOpen(true)
   }
@@ -135,14 +127,9 @@ export default function EstoquePage() {
 
       const f = fornecedores.find((x) => x.id === selectedFornecedorId)
 
-      const estoqueFinal = usarTamanhos ? data.estoque : {
-        PP: 0,
-        P: 0,
-        M: data.estoque.M || 0,
-        G: 0,
-        GG: 0,
-        XGG: 0
-      }
+      const estoqueFinal = usarTamanhos
+        ? Object.fromEntries(tamanhos.map((t) => [t, Number(data.estoque?.[t]) || 0]))
+        : { M: Number(data.estoque?.M) || 0 }
 
       // Ao CADASTRAR (produto novo), a quantidade não pode ser zero.
       if (!editingProduto) {
@@ -213,7 +200,7 @@ export default function EstoquePage() {
   function handleScanCadastro(code: string) {
     const existente = produtos.find((p) => p.codigoBarras === code && p.id !== editingProduto?.id)
     if (existente) {
-      setEntradaTamanho('M')
+      setEntradaTamanho(tamanhos[0] ?? 'M')
       setEntradaQtdStr('1')
       setModoEntrada('somar')
       setCodigoExistente(existente)
@@ -394,7 +381,7 @@ export default function EstoquePage() {
                         <TableCell className={usarTamanhos ? 'text-center' : 'text-right'}>
                           {usarTamanhos ? (
                             <div className="flex items-center justify-center gap-1 flex-wrap max-w-[180px] mx-auto">
-                              {(['PP', 'P', 'M', 'G', 'GG', 'XGG'] as const).map((t) => {
+                              {tamanhos.map((t) => {
                                 const q = p.estoque[t] ?? 0
                                 if (q === 0) return null
                                 return (
@@ -544,7 +531,7 @@ export default function EstoquePage() {
                         <div>
                           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Grade de Estoque</p>
                           <div className="grid grid-cols-6 gap-2">
-                            {(['PP', 'P', 'M', 'G', 'GG', 'XGG'] as const).map((t) => {
+                            {tamanhos.map((t) => {
                               const q = p.estoque[t] ?? 0
                               return (
                                 <div key={t} className={`rounded-xl border text-center py-3 ${q === 0 ? 'opacity-40 bg-muted/30' : 'bg-card'}`}>
@@ -771,7 +758,7 @@ export default function EstoquePage() {
               <div className="space-y-2">
                 <Label>Quantidade em Estoque por Tamanho</Label>
                 <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                  {TAMANHOS.map((t) => (
+                  {tamanhos.map((t) => (
                     <div key={t} className="space-y-1 text-center">
                       <Label className="text-xs">{t}</Label>
                       <Input type="number" min="0" className="text-center h-9" {...register(`estoque.${t}`)} onFocus={(e) => e.target.select()} />
@@ -843,7 +830,7 @@ export default function EstoquePage() {
                     <Select value={entradaTamanho} onValueChange={(v) => setEntradaTamanho(v as Tamanho)}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {TAMANHOS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                        {tamanhos.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>

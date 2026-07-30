@@ -47,9 +47,10 @@ export type CategoriaProduto =
   | 'conjunto'
   | 'outro'
 
-export type Tamanho = 'PP' | 'P' | 'M' | 'G' | 'GG' | 'XGG'
+/** Tamanho é livre (o lojista define a lista em Configurações: letras ou números). */
+export type Tamanho = string
 
-export type EstoquePorTamanho = Record<Tamanho, number>
+export type EstoquePorTamanho = Record<string, number>
 
 export interface Produto {
   id: string
@@ -208,4 +209,5 @@ export interface Configuracoes {
   usarTamanhos?: boolean
   usarFornecedor?: boolean
   usarObservacoes?: boolean
+  tamanhos?: string[]
 }

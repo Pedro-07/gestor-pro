@@ -24,7 +24,6 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 
-const TAMANHOS: Tamanho[] = ['PP', 'P', 'M', 'G', 'GG', 'XGG']
 const FP_OPTIONS: { value: FormaPagamento; label: string }[] = [
   { value: 'dinheiro', label: 'Dinheiro' },
   { value: 'pix', label: 'PIX' },
@@ -45,7 +44,7 @@ interface CartItem {
 }
 
 export default function PDVPage() {
-  const { usarTamanhos } = useAppConfig()
+  const { usarTamanhos, tamanhos } = useAppConfig()
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
@@ -89,7 +88,7 @@ export default function PDVPage() {
       return
     }
     const tamanho = usarTamanhos
-      ? TAMANHOS.find((t) => (produto.estoque[t] ?? 0) > 0)
+      ? tamanhos.find((t) => (produto.estoque[t] ?? 0) > 0)
       : 'M'
     if (!tamanho) {
       toast.error(`${produto.nome} — sem estoque disponível`)
@@ -238,7 +237,7 @@ export default function PDVPage() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input ref={searchRef} placeholder="Buscar produto, código interno ou EAN..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && filtered.length === 1) { const p = filtered[0]; const t = usarTamanhos ? TAMANHOS.find((t) => (p.estoque[t] ?? 0) > 0) : 'M'; if (t) addToCart(p, t) } }} />
+              onKeyDown={(e) => { if (e.key === 'Enter' && filtered.length === 1) { const p = filtered[0]; const t = usarTamanhos ? tamanhos.find((t) => (p.estoque[t] ?? 0) > 0) : 'M'; if (t) addToCart(p, t) } }} />
           </div>
           <BarcodeScanner onDetected={handleBarcodeDetected} label="Ler código" className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white border-blue-600 hover:text-white" />
         </div>
@@ -253,7 +252,7 @@ export default function PDVPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {filtered.map((p) => {
               const total = Object.values(p.estoque).reduce((a, b) => a + b, 0)
-              const tamsComEstoque = TAMANHOS.filter((t) => (p.estoque[t] ?? 0) > 0)
+              const tamsComEstoque = tamanhos.filter((t) => (p.estoque[t] ?? 0) > 0)
               return (
                 <div key={p.id} className="flex items-center gap-2.5 rounded-xl border bg-card p-2 hover:border-primary/40 transition-colors">
                   <div className="h-11 w-11 shrink-0 rounded-lg bg-muted border flex items-center justify-center overflow-hidden">

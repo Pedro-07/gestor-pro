@@ -116,7 +116,7 @@ CREATE TABLE movimentacoes (
   "produtoId" UUID NOT NULL REFERENCES produtos(id),
   "produtoNome" TEXT NOT NULL,
   tipo TEXT NOT NULL CHECK (tipo IN ('entrada', 'saida')),
-  tamanho TEXT NOT NULL CHECK (tamanho IN ('PP','P','M','G','GG','XGG')),
+  tamanho TEXT NOT NULL,
   quantidade INT NOT NULL DEFAULT 0,
   motivo TEXT NOT NULL DEFAULT '',
   "vendaId" UUID REFERENCES vendas(id),
@@ -169,7 +169,8 @@ CREATE TABLE config (
   "logoUrl" TEXT,
   "usarTamanhos" BOOLEAN DEFAULT TRUE,
   "usarFornecedor" BOOLEAN DEFAULT FALSE,
-  "usarObservacoes" BOOLEAN DEFAULT FALSE
+  "usarObservacoes" BOOLEAN DEFAULT FALSE,
+  tamanhos JSONB DEFAULT '["PP","P","M","G","GG","XGG"]'
 );
 
 -- ─── INDEXES ─────────────────────────────────────────────────────────────────

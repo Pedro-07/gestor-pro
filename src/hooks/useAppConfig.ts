@@ -14,5 +14,6 @@ export function useAppConfig() {
     usarTamanhos: data?.usarTamanhos !== false,
     usarFornecedor: data?.usarFornecedor === true,
     usarObservacoes: data?.usarObservacoes === true,
+    tamanhos: (data?.tamanhos && data.tamanhos.length ? data.tamanhos : ['PP', 'P', 'M', 'G', 'GG', 'XGG']) as string[],
   }
 }
