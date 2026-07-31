@@ -11,7 +11,6 @@ import {
   DollarSign,
   Package,
   Truck,
-  BarChart3,
   Settings,
   ShoppingBag,
   ScanLine,
@@ -33,7 +32,6 @@ const navItems = [
   { href: '/financeiro', label: 'Financeiro', icon: DollarSign },
   { href: '/estoque', label: 'Estoque', icon: Package },
   { href: '/fornecedores', label: 'Fornecedores', icon: Truck },
-  { href: '/relatorios', label: 'Relatórios', icon: BarChart3 },
   { href: '/configuracoes', label: 'Configurações', icon: Settings },
 ]
 

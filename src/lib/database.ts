@@ -217,6 +217,13 @@ export async function fetchConsignacaoById(id: string): Promise<Consignacao | nu
   return data as Consignacao
 }
 
+export async function fetchAcertos(): Promise<AcertoConsignacao[]> {
+  const { data, error } = await supabase
+    .from('consignacao_acertos').select('*').order('dataAcerto', { ascending: false })
+  if (error) throw error
+  return data as AcertoConsignacao[]
+}
+
 export async function fetchAcertosByConsignacao(consignacaoId: string): Promise<AcertoConsignacao[]> {
   const { data, error } = await supabase
     .from('consignacao_acertos').select('*')
