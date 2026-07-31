@@ -27,7 +27,7 @@ import { useAppConfig } from '@/hooks/useAppConfig'
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/clientes', label: 'Clientes', icon: Users },
-  { href: '/vendas', label: 'Vendas', icon: ShoppingCart },
+  { href: '/vendas', label: 'Minhas Vendas', icon: ShoppingCart },
   { href: '/vendas/pdv', label: 'PDV', icon: ScanLine },
   { href: '/consignacoes', label: 'Consignações', icon: Handshake },
   { href: '/financeiro', label: 'Financeiro', icon: DollarSign },
