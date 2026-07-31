@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchProdutos, fetchFornecedores, insertProduto, updateProduto, deleteProduto, setProdutoAtivo, uploadFile, fetchVendas, fetchMovimentacoesByProduto, insertMovimentacao } from '@/lib/database'
+import { fetchProdutos, fetchFornecedores, insertProduto, updateProduto, deleteProduto, setProdutoAtivo, uploadFile, fetchVendas, fetchMovimentacoesByProduto, insertMovimentacao, fetchProdutoIdsComMovimento } from '@/lib/database'
 import type { Produto, CategoriaProduto, Fornecedor, Tamanho } from '@/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useForm, Controller, type Resolver } from 'react-hook-form'
@@ -21,9 +21,10 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { Combobox } from '@/components/shared/combobox'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Plus, Search, MoreVertical, Pencil, Trash2, Package, UploadCloud, Loader2, Image as ImageIcon, History, TrendingUp, Info, ArrowUpRight, Ban, Power } from 'lucide-react'
+import { Plus, Search, MoreVertical, Pencil, Trash2, Package, UploadCloud, Loader2, Image as ImageIcon, History, TrendingUp, Info, ArrowUpRight, Ban, Power, SlidersHorizontal } from 'lucide-react'
 import Image from 'next/image'
 import { BarcodeScanner } from '@/components/shared/barcode-scanner'
 
@@ -61,15 +62,23 @@ export default function EstoquePage() {
   const [entradaQtdStr, setEntradaQtdStr] = useState('1')
   const [modoEntrada, setModoEntrada] = useState<'somar' | 'definir'>('somar')
   const [savingEntrada, setSavingEntrada] = useState(false)
+  // Filtros
+  const [statusFiltro, setStatusFiltro] = useState<'todos' | 'ativos' | 'inativos' | 'sem_movimento'>('todos')
+  const [dataInicioF, setDataInicioF] = useState('')
+  const [dataFimF, setDataFimF] = useState('')
 
   const { data: produtos = [], isLoading } = useQuery({ queryKey: ['produtos'], queryFn: fetchProdutos })
   const { data: fornecedores = [] } = useQuery<Fornecedor[]>({ queryKey: ['fornecedores'], queryFn: fetchFornecedores })
   const { data: vendas = [] } = useQuery({ queryKey: ['vendas'], queryFn: fetchVendas })
+  const { data: idsComMovimento = new Set<string>() } = useQuery({ queryKey: ['movimentacoes-ids'], queryFn: fetchProdutoIdsComMovimento })
   const { data: movimentacoes = [], isLoading: isLoadingMovs } = useQuery({
     queryKey: ['movimentacoes', selectedProdutoDetails?.id],
     queryFn: () => selectedProdutoDetails ? fetchMovimentacoesByProduto(selectedProdutoDetails.id) : Promise.resolve([]),
     enabled: !!selectedProdutoDetails?.id
   })
+
+  const dayKey = (iso: string) => new Date(iso).toISOString().slice(0, 10)
+  const filtroAtivo = statusFiltro !== 'todos' || dataInicioF !== '' || dataFimF !== ''
 
   const filtered = produtos.filter((p) => {
     const matchSearch =
@@ -77,7 +86,14 @@ export default function EstoquePage() {
       p.codigo?.toLowerCase().includes(search.toLowerCase()) ||
       p.codigoBarras?.includes(search)
     const matchCategoria = categoriaFilter === 'todas' || p.categoria === categoriaFilter
-    return matchSearch && matchCategoria
+    const matchStatus =
+      statusFiltro === 'todos' ||
+      (statusFiltro === 'ativos' && p.ativo !== false) ||
+      (statusFiltro === 'inativos' && p.ativo === false) ||
+      (statusFiltro === 'sem_movimento' && !idsComMovimento.has(p.id))
+    const k = p.createdAt ? dayKey(p.createdAt) : ''
+    const matchData = (!dataInicioF || k >= dataInicioF) && (!dataFimF || k <= dataFimF)
+    return matchSearch && matchCategoria && matchStatus && matchData
   })
 
   const { register, handleSubmit, reset, setValue, control, formState: { errors } } = useForm<ProdutoForm>({
@@ -151,13 +167,37 @@ export default function EstoquePage() {
 
       if (editingProduto) {
         await updateProduto(editingProduto.id, payload)
+        // Registra no histórico os ajustes manuais de saldo (diferença por tamanho)
+        const antes = editingProduto.estoque as Record<string, number>
+        const chaves = new Set([...Object.keys(antes ?? {}), ...Object.keys(estoqueFinal)])
+        for (const t of chaves) {
+          const delta = (Number((estoqueFinal as Record<string, number>)[t]) || 0) - (Number(antes?.[t]) || 0)
+          if (delta !== 0) {
+            await insertMovimentacao({
+              produtoId: editingProduto.id, produtoNome: data.nome,
+              tipo: delta > 0 ? 'entrada' : 'saida', tamanho: t,
+              quantidade: Math.abs(delta), motivo: 'Ajuste de saldo (edição)',
+            })
+          }
+        }
         toast.success('Produto atualizado!')
       } else {
-        await insertProduto(payload)
+        const novoId = await insertProduto(payload)
+        // Registra o estoque inicial no histórico
+        for (const [t, q] of Object.entries(estoqueFinal as Record<string, number>)) {
+          if (q > 0) {
+            await insertMovimentacao({
+              produtoId: novoId, produtoNome: data.nome,
+              tipo: 'entrada', tamanho: t, quantidade: q, motivo: 'Cadastro inicial',
+            })
+          }
+        }
         toast.success('Produto cadastrado!')
       }
 
       qc.invalidateQueries({ queryKey: ['produtos'] })
+      qc.invalidateQueries({ queryKey: ['movimentacoes-ids'] })
+      if (editingProduto) qc.invalidateQueries({ queryKey: ['movimentacoes', editingProduto.id] })
       setDialogOpen(false)
     } catch {
       toast.error('Erro ao salvar produto')
@@ -240,6 +280,8 @@ export default function EstoquePage() {
         })
       }
       qc.invalidateQueries({ queryKey: ['produtos'] })
+      qc.invalidateQueries({ queryKey: ['movimentacoes-ids'] })
+      qc.invalidateQueries({ queryKey: ['movimentacoes', codigoExistente.id] })
       toast.success(
         modoEntrada === 'somar'
           ? `+${qtd} un. — ${codigoExistente.nome} (total ${novoValor})`
@@ -276,6 +318,35 @@ export default function EstoquePage() {
             <SelectItem value="outro">Outro</SelectItem>
           </SelectContent>
         </Select>
+        <Popover>
+          <PopoverTrigger className="relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-muted" title="Filtrar">
+            <SlidersHorizontal className="h-4 w-4" />
+            {filtroAtivo && <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-primary" />}
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-72 space-y-3">
+            <p className="text-sm font-semibold">Filtrar produtos</p>
+            <div className="space-y-1">
+              <Label className="text-xs">Situação</Label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {([['todos', 'Todos'], ['ativos', 'Ativos'], ['inativos', 'Inativos'], ['sem_movimento', 'Sem movimento']] as const).map(([v, l]) => (
+                  <button key={v} type="button" onClick={() => setStatusFiltro(v)}
+                    className={`text-xs px-2 py-1.5 rounded-md border font-medium transition-colors ${statusFiltro === v ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-muted'}`}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Cadastrados no período</Label>
+              <div className="flex items-center gap-2">
+                <Input type="date" value={dataInicioF} onChange={(e) => setDataInicioF(e.target.value)} className="flex-1 h-9" title="De" />
+                <span className="text-xs text-muted-foreground">até</span>
+                <Input type="date" value={dataFimF} onChange={(e) => setDataFimF(e.target.value)} className="flex-1 h-9" title="Até" />
+              </div>
+            </div>
+            <Button type="button" variant="ghost" size="sm" className="w-full" onClick={() => { setStatusFiltro('todos'); setDataInicioF(''); setDataFimF('') }}>Limpar filtros</Button>
+          </PopoverContent>
+        </Popover>
         <Button onClick={openNew} className="shrink-0"><Plus className="h-4 w-4 mr-2" />Novo Produto</Button>
       </div>
 

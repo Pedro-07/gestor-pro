@@ -40,16 +40,20 @@ function labelDia(key: string) {
 
 export default function MinhasVendasPage() {
   const router = useRouter()
-  const [dataFiltro, setDataFiltro] = useState(hoje)
+  const [dataInicio, setDataInicio] = useState(hoje)
+  const [dataFim, setDataFim] = useState(hoje)
   const [cliente, setCliente] = useState('')
   const [vendaId, setVendaId] = useState('')
 
   const { data: vendas = [], isLoading } = useQuery({ queryKey: ['vendas'], queryFn: fetchVendas })
 
-  const temFiltroExtra = cliente.trim() !== '' || vendaId.trim() !== '' || dataFiltro !== hoje
+  const periodoHoje = dataInicio === hoje && dataFim === hoje
+  const temFiltroExtra = cliente.trim() !== '' || vendaId.trim() !== '' || !periodoHoje
 
   const filtered = vendas.filter((v) => {
-    if (dataFiltro && dayKey(new Date(v.createdAt)) !== dataFiltro) return false
+    const k = dayKey(new Date(v.createdAt))
+    if (dataInicio && k < dataInicio) return false
+    if (dataFim && k > dataFim) return false
     if (cliente.trim() && !v.clienteNome.toLowerCase().includes(cliente.trim().toLowerCase())) return false
     if (vendaId.trim() && !v.id.toLowerCase().includes(vendaId.trim().toLowerCase())) return false
     return true
@@ -61,7 +65,7 @@ export default function MinhasVendasPage() {
   const dias = Object.keys(grupos).sort().reverse()
   dias.forEach((k) => grupos[k].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()))
 
-  function limpar() { setDataFiltro(hoje); setCliente(''); setVendaId('') }
+  function limpar() { setDataInicio(hoje); setDataFim(hoje); setCliente(''); setVendaId('') }
 
   return (
     <div className="space-y-4">
@@ -69,7 +73,7 @@ export default function MinhasVendasPage() {
         <div>
           <h1 className="text-xl font-bold">Minhas Vendas</h1>
           <p className="text-sm text-muted-foreground">
-            {dataFiltro === hoje && !cliente && !vendaId ? 'Vendas de hoje' : 'Resultado do filtro'} · {filtered.length} venda(s)
+            {periodoHoje && !cliente && !vendaId ? 'Vendas de hoje' : 'Resultado do filtro'} · {filtered.length} venda(s)
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -81,10 +85,15 @@ export default function MinhasVendasPage() {
             <PopoverContent align="end" className="w-72 space-y-3">
               <p className="text-sm font-semibold">Filtrar vendas</p>
               <div className="space-y-1">
-                <Label className="text-xs">Data</Label>
-                <div className="flex gap-2">
-                  <Input type="date" value={dataFiltro} onChange={(e) => setDataFiltro(e.target.value)} className="flex-1 h-9" />
-                  <Button type="button" variant="outline" size="sm" onClick={() => setDataFiltro('')} title="Todas as datas">Todas</Button>
+                <Label className="text-xs">Período</Label>
+                <div className="flex items-center gap-2">
+                  <Input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="flex-1 h-9" title="De" />
+                  <span className="text-xs text-muted-foreground">até</span>
+                  <Input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="flex-1 h-9" title="Até" />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <Button type="button" variant="outline" size="sm" className="flex-1" onClick={() => { setDataInicio(hoje); setDataFim(hoje) }}>Hoje</Button>
+                  <Button type="button" variant="outline" size="sm" className="flex-1" onClick={() => { setDataInicio(''); setDataFim('') }}>Todas as datas</Button>
                 </div>
               </div>
               <div className="space-y-1">
@@ -107,7 +116,7 @@ export default function MinhasVendasPage() {
       ) : filtered.length === 0 ? (
         <Card><CardContent className="py-12 text-center text-muted-foreground">
           <CalendarDays className="h-10 w-10 mx-auto mb-2 opacity-20" />
-          {dataFiltro === hoje && !cliente && !vendaId ? 'Nenhuma venda hoje ainda.' : 'Nenhuma venda encontrada para o filtro.'}
+          {periodoHoje && !cliente && !vendaId ? 'Nenhuma venda hoje ainda.' : 'Nenhuma venda encontrada para o filtro.'}
         </CardContent></Card>
       ) : (
         <div className="space-y-5">

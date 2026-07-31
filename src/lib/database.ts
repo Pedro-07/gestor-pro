@@ -72,9 +72,17 @@ export async function fetchProdutosByNome(): Promise<Produto[]> {
   return data as Produto[]
 }
 
-export async function insertProduto(p: Partial<Produto>) {
-  const { error } = await supabase.from('produtos').insert(p)
+export async function insertProduto(p: Partial<Produto>): Promise<string> {
+  const { data, error } = await supabase.from('produtos').insert(p).select('id').single()
   if (error) throw error
+  return data.id as string
+}
+
+/** Conjunto de produtoIds que já possuem alguma movimentação (para o filtro "sem movimento"). */
+export async function fetchProdutoIdsComMovimento(): Promise<Set<string>> {
+  const { data, error } = await supabase.from('movimentacoes').select('produtoId')
+  if (error) throw error
+  return new Set((data ?? []).map((m: { produtoId: string }) => m.produtoId))
 }
 
 export async function updateProduto(id: string, data: Partial<Produto>) {
