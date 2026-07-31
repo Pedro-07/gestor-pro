@@ -3,7 +3,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TransacoesPanel } from '@/components/panels/transacoes-panel'
 import { RecebimentosPanel } from '@/components/panels/recebimentos-panel'
-import RelatoriosPage from '../relatorios/page'
+import RelatoriosPage from '../relatorios/relatorios-view'
 import { Receipt, DollarSign, BarChart3 } from 'lucide-react'
 
 export default function FinanceiroPage() {
