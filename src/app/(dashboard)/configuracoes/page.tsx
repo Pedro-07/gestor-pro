@@ -12,9 +12,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useForm, Controller } from 'react-hook-form'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { Loader2, Save, UploadCloud, MessageSquare, Store } from 'lucide-react'
+import { Loader2, Save, UploadCloud, Store, Package, Users, ShoppingCart } from 'lucide-react'
 import Image from 'next/image'
 
 const defaultTemplates = {
@@ -81,11 +80,14 @@ export default function ConfiguracoesPage() {
     <div className="max-w-4xl space-y-4">
       <form onSubmit={handleSubmit(onSubmit)}>
         <Tabs defaultValue="geral" className="flex flex-col">
-          <TabsList className="grid grid-cols-2 w-full sm:inline-flex sm:w-auto mb-4">
-            <TabsTrigger value="geral"><Store className="h-4 w-4 mr-2 shrink-0" /><span className="truncate">Geral & Loja</span></TabsTrigger>
-            <TabsTrigger value="whatsapp"><MessageSquare className="h-4 w-4 mr-2 shrink-0" /><span className="truncate">WhatsApp</span></TabsTrigger>
+          <TabsList className="grid grid-cols-2 sm:inline-flex w-full sm:w-auto mb-4">
+            <TabsTrigger value="geral"><Store className="h-4 w-4 mr-2 shrink-0" /><span className="truncate">Geral</span></TabsTrigger>
+            <TabsTrigger value="estoque"><Package className="h-4 w-4 mr-2 shrink-0" /><span className="truncate">Estoque</span></TabsTrigger>
+            <TabsTrigger value="clientes"><Users className="h-4 w-4 mr-2 shrink-0" /><span className="truncate">Clientes</span></TabsTrigger>
+            <TabsTrigger value="vendas"><ShoppingCart className="h-4 w-4 mr-2 shrink-0" /><span className="truncate">Vendas</span></TabsTrigger>
           </TabsList>
 
+          {/* ─── GERAL: identidade e dados da loja ─── */}
           <TabsContent value="geral" className="space-y-4">
             <Card>
               <CardHeader><CardTitle>Identidade Visual</CardTitle><CardDescription>Logo e nome que aparecerão no sistema.</CardDescription></CardHeader>
@@ -107,85 +109,97 @@ export default function ConfiguracoesPage() {
                 <div className="space-y-1"><Label>Telefone (WhatsApp)</Label><Input {...register('telefoneVendedor')} placeholder="(11) 99999-9999" /></div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* ─── ESTOQUE: tamanhos e campos do cadastro ─── */}
+          <TabsContent value="estoque" className="space-y-4">
             <Card>
-              <CardHeader><CardTitle>Preferências do Sistema</CardTitle><CardDescription>Personalize o funcionamento do painel de controle.</CardDescription></CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Grade de tamanhos no estoque</Label>
-                  <Controller name="usarTamanhos" control={control} render={({ field }) => (
-                    <label className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
-                      <input type="checkbox" checked={!!field.value} onChange={(e) => field.onChange(e.target.checked)} className="mt-0.5 h-4 w-4 accent-blue-600 shrink-0" />
-                      <div><p className="text-sm font-medium">Usar grade de tamanhos</p><p className="text-xs text-muted-foreground">Se desmarcado, o estoque é único por produto (sem tamanhos).</p></div>
-                    </label>
-                  )} />
+              <CardHeader><CardTitle>Grade de tamanhos</CardTitle><CardDescription>Como o estoque é organizado por tamanho.</CardDescription></CardHeader>
+              <CardContent className="space-y-2">
+                <Controller name="usarTamanhos" control={control} render={({ field }) => (
+                  <label className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
+                    <input type="checkbox" checked={!!field.value} onChange={(e) => field.onChange(e.target.checked)} className="mt-0.5 h-4 w-4 accent-blue-600 shrink-0" />
+                    <div><p className="text-sm font-medium">Usar grade de tamanhos</p><p className="text-xs text-muted-foreground">Se desmarcado, o estoque é único por produto (sem tamanhos).</p></div>
+                  </label>
+                )} />
 
-                  {watch('usarTamanhos') && (
-                    <Controller name="tamanhos" control={control} render={({ field }) => {
-                      const sizes: string[] = field.value ?? []
-                      const setSizes = (s: string[]) => field.onChange(s)
-                      const addSize = () => {
-                        const v = novoTamanho.trim().toUpperCase()
-                        if (v && !sizes.includes(v)) setSizes([...sizes, v])
-                        setNovoTamanho('')
-                      }
-                      return (
-                        <div className="space-y-2 rounded-lg border p-3 mt-1">
-                          <p className="text-xs text-muted-foreground">Escolha os tamanhos que a sua loja usa (letras ou números). Use um preset ou monte a sua lista.</p>
-                          <div className="flex flex-wrap gap-2">
-                            <Button type="button" variant="outline" size="sm" onClick={() => setSizes(['PP', 'P', 'M', 'G', 'GG', 'XGG'])}>Letras (PP–XGG)</Button>
-                            <Button type="button" variant="outline" size="sm" onClick={() => setSizes(['36', '38', '40', '42', '44', '46'])}>Números (36–46)</Button>
-                            <Button type="button" variant="outline" size="sm" onClick={() => setSizes(['34', '36', '38', '40', '42', '44'])}>Calçados (34–44)</Button>
-                          </div>
-                          <div className="flex flex-wrap gap-1.5 min-h-8">
-                            {sizes.length === 0 && <span className="text-xs text-muted-foreground">Nenhum tamanho — adicione abaixo.</span>}
-                            {sizes.map((t) => (
-                              <span key={t} className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs font-semibold">
-                                {t}
-                                <button type="button" onClick={() => setSizes(sizes.filter((x) => x !== t))} className="text-muted-foreground hover:text-destructive">×</button>
-                              </span>
-                            ))}
-                          </div>
-                          <div className="flex gap-2">
-                            <Input value={novoTamanho} onChange={(e) => setNovoTamanho(e.target.value)}
-                              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSize() } }}
-                              placeholder="Ex: XG, 48, 38/40..." className="flex-1 h-9" />
-                            <Button type="button" variant="secondary" size="sm" onClick={addSize} disabled={!novoTamanho.trim()}>Adicionar</Button>
-                          </div>
+                {watch('usarTamanhos') && (
+                  <Controller name="tamanhos" control={control} render={({ field }) => {
+                    const sizes: string[] = field.value ?? []
+                    const setSizes = (s: string[]) => field.onChange(s)
+                    const addSize = () => {
+                      const v = novoTamanho.trim().toUpperCase()
+                      if (v && !sizes.includes(v)) setSizes([...sizes, v])
+                      setNovoTamanho('')
+                    }
+                    return (
+                      <div className="space-y-2 rounded-lg border p-3 mt-1">
+                        <p className="text-xs text-muted-foreground">Escolha os tamanhos que a sua loja usa (letras ou números). Use um preset ou monte a sua lista.</p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button type="button" variant="outline" size="sm" onClick={() => setSizes(['PP', 'P', 'M', 'G', 'GG', 'XGG'])}>Letras (PP–XGG)</Button>
+                          <Button type="button" variant="outline" size="sm" onClick={() => setSizes(['36', '38', '40', '42', '44', '46'])}>Números (36–46)</Button>
+                          <Button type="button" variant="outline" size="sm" onClick={() => setSizes(['34', '36', '38', '40', '42', '44'])}>Calçados (34–44)</Button>
                         </div>
-                      )
-                    }} />
-                  )}
-                </div>
-
-                <div className="space-y-2 pt-4 border-t">
-                  <Label>Campos do cadastro de produtos</Label>
-                  <p className="text-xs text-muted-foreground">Escolha quais campos opcionais aparecem ao cadastrar/editar um produto.</p>
-                  <Controller name="usarFornecedor" control={control} render={({ field }) => (
-                    <label className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
-                      <input type="checkbox" checked={!!field.value} onChange={(e) => field.onChange(e.target.checked)} className="mt-0.5 h-4 w-4 accent-blue-600 shrink-0" />
-                      <div><p className="text-sm font-medium">Mostrar campo &quot;Fornecedor&quot;</p><p className="text-xs text-muted-foreground">Exibe a seleção de fornecedor no cadastro de produtos.</p></div>
-                    </label>
-                  )} />
-                  <Controller name="usarObservacoes" control={control} render={({ field }) => (
-                    <label className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
-                      <input type="checkbox" checked={!!field.value} onChange={(e) => field.onChange(e.target.checked)} className="mt-0.5 h-4 w-4 accent-blue-600 shrink-0" />
-                      <div><p className="text-sm font-medium">Mostrar campo &quot;Observações&quot;</p><p className="text-xs text-muted-foreground">Exibe o campo de descrição/observações no cadastro de produtos.</p></div>
-                    </label>
-                  )} />
-                </div>
+                        <div className="flex flex-wrap gap-1.5 min-h-8">
+                          {sizes.length === 0 && <span className="text-xs text-muted-foreground">Nenhum tamanho — adicione abaixo.</span>}
+                          {sizes.map((t) => (
+                            <span key={t} className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs font-semibold">
+                              {t}
+                              <button type="button" onClick={() => setSizes(sizes.filter((x) => x !== t))} className="text-muted-foreground hover:text-destructive">×</button>
+                            </span>
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
+                          <Input value={novoTamanho} onChange={(e) => setNovoTamanho(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSize() } }}
+                            placeholder="Ex: XG, 48, 38/40..." className="flex-1 h-9" />
+                          <Button type="button" variant="secondary" size="sm" onClick={addSize} disabled={!novoTamanho.trim()}>Adicionar</Button>
+                        </div>
+                      </div>
+                    )
+                  }} />
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader><CardTitle>Campos do cadastro de produtos</CardTitle><CardDescription>Escolha quais campos opcionais aparecem ao cadastrar/editar um produto.</CardDescription></CardHeader>
+              <CardContent className="space-y-2">
+                <Controller name="usarFornecedor" control={control} render={({ field }) => (
+                  <label className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
+                    <input type="checkbox" checked={!!field.value} onChange={(e) => field.onChange(e.target.checked)} className="mt-0.5 h-4 w-4 accent-blue-600 shrink-0" />
+                    <div><p className="text-sm font-medium">Mostrar campo &quot;Fornecedor&quot;</p><p className="text-xs text-muted-foreground">Exibe a seleção de fornecedor no cadastro (e o item Fornecedores no menu).</p></div>
+                  </label>
+                )} />
+                <Controller name="usarObservacoes" control={control} render={({ field }) => (
+                  <label className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
+                    <input type="checkbox" checked={!!field.value} onChange={(e) => field.onChange(e.target.checked)} className="mt-0.5 h-4 w-4 accent-blue-600 shrink-0" />
+                    <div><p className="text-sm font-medium">Mostrar campo &quot;Observações&quot;</p><p className="text-xs text-muted-foreground">Exibe o campo de descrição/observações no cadastro de produtos.</p></div>
+                  </label>
+                )} />
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="whatsapp" className="space-y-4">
+          {/* ─── CLIENTES: mensagens enviadas ao cliente ─── */}
+          <TabsContent value="clientes" className="space-y-4">
             <Card>
-              <CardHeader><CardTitle>Templates de Mensagem</CardTitle><CardDescription>Configure as mensagens enviadas aos clientes. Use as variáveis entre chaves para personalizar automaticamente.</CardDescription></CardHeader>
+              <CardHeader><CardTitle>Mensagens ao cliente (WhatsApp)</CardTitle><CardDescription>Modelos usados na cobrança e nos avisos. Use as variáveis entre chaves para personalizar automaticamente.</CardDescription></CardHeader>
               <CardContent className="space-y-6">
                 <div className="space-y-2 text-sm bg-muted p-3 rounded-lg"><p className="font-semibold">Variáveis disponíveis:</p><p className="text-muted-foreground font-mono text-xs">{"{nome}, {valor}, {vencimento}, {numero}, {total}"}</p></div>
                 <div className="space-y-1"><Label>Lembrete de Cobrança</Label><Textarea rows={4} {...register('templateCobranca')} className="font-mono text-sm" /></div>
                 <div className="space-y-1"><Label>Mensagem de Inadimplência</Label><Textarea rows={4} {...register('templateInadimplente')} className="font-mono text-sm" /></div>
                 <div className="space-y-1"><Label>Confirmação de Pagamento</Label><Textarea rows={3} {...register('templateConfirmacaoPagamento')} className="font-mono text-sm" /></div>
                 <Button type="button" variant="outline" size="sm" onClick={() => { setValue('templateCobranca', defaultTemplates.templateCobranca); setValue('templateInadimplente', defaultTemplates.templateInadimplente); setValue('templateConfirmacaoPagamento', defaultTemplates.templateConfirmacaoPagamento) }}>Restaurar Padrões</Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ─── VENDAS: reservado para evoluir ─── */}
+          <TabsContent value="vendas" className="space-y-4">
+            <Card>
+              <CardHeader><CardTitle>Vendas & PDV</CardTitle><CardDescription>Preferências de vendas e ponto de venda.</CardDescription></CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">Ainda não há configurações de vendas por aqui. Esta seção está pronta para receber novas opções (ex.: forma de pagamento padrão, desconto máximo, impressão de recibo).</p>
               </CardContent>
             </Card>
           </TabsContent>
