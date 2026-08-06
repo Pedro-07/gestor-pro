@@ -190,6 +190,7 @@ export interface Consignacao {
   itens: ItemConsignacao[]
   totalEntregue: number
   totalRecebido: number
+  comissaoPct: number
   status: StatusConsignacao
   observacoes?: string
   dataEntrega: string

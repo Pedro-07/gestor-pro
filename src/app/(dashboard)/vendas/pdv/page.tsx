@@ -169,16 +169,15 @@ export default function PDVPage() {
 
       // Consignação: entrega ao lojista (baixa estoque, não fatura até o acerto)
       if (formaPagamento === 'consignado') {
-        // Comissão reduz o preço de repasse (o lojista fica com a comissão)
-        const fator = 1 - comissaoConsignado / 100
+        // Preço de repasse cheio + comissão % — a comissão é aplicada no acerto
         await criarConsignacao({
           clienteId, clienteNome: cliente.nome, clienteCidade: cliente.cidade,
           clienteTelefone: cliente.telefone ?? '',
           itens: cart.map(({ produtoId, produtoNome, tamanho, quantidade, precoUnitario }) => ({
-            produtoId, produtoNome, tamanho, quantidade,
-            precoUnitario: Math.round(precoUnitario * fator * 100) / 100,
+            produtoId, produtoNome, tamanho, quantidade, precoUnitario,
           })),
           observacoes: comissaoConsignado > 0 ? `Comissão do lojista: ${comissaoConsignado}%` : undefined,
+          comissao: comissaoConsignado,
         })
 
         qc.invalidateQueries({ queryKey: ['consignacoes'] })
@@ -428,7 +427,7 @@ export default function PDVPage() {
                 <p className="font-semibold text-amber-600 dark:text-amber-400">Entrega em consignação</p>
                 <p>As peças saem do seu estoque agora, mas <strong>nada é faturado</strong>. O lojista paga só o que vender (ao preço de repasse = preço de venda) e devolve o restante no acerto de contas, em <strong>Consignações</strong>.</p>
                 <p className="pt-1">Valor potencial (se vender tudo): <strong className="text-foreground font-mono">{formatCurrency(cartTotal)}</strong></p>
-                {comissaoConsignado > 0 && <p>Comissão do lojista: <strong className="text-amber-600 dark:text-amber-400">{comissaoConsignado}%</strong> — o repasse a receber por peça vendida é o preço de venda menos a comissão.</p>}
+                {comissaoConsignado > 0 && <p>Comissão do lojista: <strong className="text-amber-600 dark:text-amber-400">{comissaoConsignado}%</strong>. No acerto, sobre o que ele vender você recebe o líquido (bruto vendido − {comissaoConsignado}% de comissão).</p>}
               </div>
             )}
             <Separator />

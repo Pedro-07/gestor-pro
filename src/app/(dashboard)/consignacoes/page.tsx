@@ -64,13 +64,16 @@ export default function ConsignacoesPage() {
     })
   }
 
-  const valorAcerto = useMemo(() => {
+  const brutoAcerto = useMemo(() => {
     if (!acertoConsig) return 0
     return acertoConsig.itens.reduce((s, i) => {
       const m = mov[itemKey(i.produtoId, i.tamanho)]
       return s + (m ? m.vendidas * i.precoUnitario : 0)
     }, 0)
   }, [acertoConsig, mov])
+  const comissaoPct = acertoConsig?.comissaoPct ?? 0
+  const comissaoAcerto = Math.round(brutoAcerto * (comissaoPct / 100) * 100) / 100
+  const liquidoAcerto = Math.round((brutoAcerto - comissaoAcerto) * 100) / 100
 
   function devolverRestante() {
     if (!acertoConsig) return
@@ -181,6 +184,9 @@ export default function ConsignacoesPage() {
                     <span className="text-muted-foreground">Recebido: <strong className="text-green-600 dark:text-green-400 font-mono">{formatCurrency(c.totalRecebido)}</strong></span>
                     <span className="text-muted-foreground">Potencial: <strong className="text-foreground font-mono">{formatCurrency(c.totalEntregue)}</strong></span>
                   </div>
+                  {c.comissaoPct > 0 && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400">Comissão do lojista: {c.comissaoPct}%</p>
+                  )}
 
                   <div className="flex gap-2 pt-1">
                     {c.status === 'aberta' && (
@@ -244,6 +250,14 @@ export default function ConsignacoesPage() {
                 })}
               </div>
 
+              {comissaoPct > 0 && brutoAcerto > 0 && (
+                <div className="rounded-lg bg-muted/40 p-2.5 text-xs space-y-1">
+                  <div className="flex justify-between"><span className="text-muted-foreground">Bruto vendido</span><span className="font-mono">{formatCurrency(brutoAcerto)}</span></div>
+                  <div className="flex justify-between text-amber-600 dark:text-amber-400"><span>Comissão do lojista ({comissaoPct}%)</span><span className="font-mono">−{formatCurrency(comissaoAcerto)}</span></div>
+                  <div className="flex justify-between font-semibold"><span>Você recebe (líquido)</span><span className="font-mono text-green-600 dark:text-green-400">{formatCurrency(liquidoAcerto)}</span></div>
+                </div>
+              )}
+
               <Separator />
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
@@ -256,9 +270,9 @@ export default function ConsignacoesPage() {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Valor a receber</Label>
+                  <Label className="text-xs">{comissaoPct > 0 ? 'Você recebe (líquido)' : 'Valor a receber'}</Label>
                   <div className="h-9 flex items-center px-3 rounded-md border bg-muted/30 font-mono font-bold text-green-600 dark:text-green-400">
-                    {formatCurrency(valorAcerto)}
+                    {formatCurrency(liquidoAcerto)}
                   </div>
                 </div>
               </div>

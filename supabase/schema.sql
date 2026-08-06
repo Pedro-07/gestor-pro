@@ -134,6 +134,7 @@ CREATE TABLE consignacoes (
   itens JSONB NOT NULL DEFAULT '[]',
   "totalEntregue" NUMERIC(10,2) NOT NULL DEFAULT 0,
   "totalRecebido" NUMERIC(10,2) NOT NULL DEFAULT 0,
+  "comissaoPct" NUMERIC(5,2) NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'aberta'
     CHECK (status IN ('aberta','fechada','cancelada')),
   observacoes TEXT,

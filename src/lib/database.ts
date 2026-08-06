@@ -256,6 +256,7 @@ export async function criarConsignacao(params: {
   clienteTelefone: string
   itens: Array<{ produtoId: string; produtoNome: string; tamanho: Tamanho; quantidade: number; precoUnitario: number }>
   observacoes?: string
+  comissao?: number
 }): Promise<string> {
   // Transacional (RPC criar_consignacao): valida + trava o estoque, cria a
   // consignação, baixa o estoque e registra as movimentações numa transação.
@@ -266,6 +267,7 @@ export async function criarConsignacao(params: {
     p_cliente_telefone: params.clienteTelefone,
     p_itens: params.itens,
     p_observacoes: params.observacoes ?? '',
+    p_comissao: params.comissao ?? 0,
   })
   if (error) throw new Error(error.message)
   return data as string
