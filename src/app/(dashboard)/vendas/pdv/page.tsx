@@ -44,13 +44,14 @@ interface CartItem {
 }
 
 export default function PDVPage() {
-  const { usarTamanhos, tamanhos } = useAppConfig()
+  const { usarTamanhos, tamanhos, meiosPagamento } = useAppConfig()
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
   const [checkoutOpen, setCheckoutOpen] = useState(false)
   const [clienteId, setClienteId] = useState('')
   const [formaPagamento, setFormaPagamento] = useState<FormaPagamento>('dinheiro')
+  const [descontoPct, setDescontoPct] = useState(0)
   const [numeroParcelas, setNumeroParcelas] = useState(2)
   const [entrada, setEntrada] = useState(0)
   const [saving, setSaving] = useState(false)
@@ -75,6 +76,15 @@ export default function PDVPage() {
     })
 
   const cartTotal = cart.reduce((s, i) => s + i.subtotal, 0)
+
+  // Meios de pagamento ativos + regra do meio selecionado
+  const fpOptions = FP_OPTIONS.filter((fp) => meiosPagamento[fp.value]?.ativo !== false)
+  const regraForma = meiosPagamento[formaPagamento]
+  const descontoPermitido = !!regraForma?.regra && formaPagamento !== 'consignado'
+  const descontoMax = descontoPermitido ? (regraForma?.valor ?? 0) : 0
+  const descontoAplicado = descontoPermitido ? Math.min(Math.max(0, descontoPct), descontoMax) : 0
+  const totalComDesconto = Math.round(cartTotal * (1 - descontoAplicado / 100) * 100) / 100
+  const comissaoConsignado = formaPagamento === 'consignado' && meiosPagamento.consignado?.regra ? (meiosPagamento.consignado?.valor ?? 0) : 0
 
   const handleBarcodeDetected = useCallback((code: string) => {
     const produto = produtos.find((p) => p.codigoBarras === code || p.codigo === code)
@@ -159,19 +169,23 @@ export default function PDVPage() {
 
       // Consignação: entrega ao lojista (baixa estoque, não fatura até o acerto)
       if (formaPagamento === 'consignado') {
+        // Comissão reduz o preço de repasse (o lojista fica com a comissão)
+        const fator = 1 - comissaoConsignado / 100
         await criarConsignacao({
           clienteId, clienteNome: cliente.nome, clienteCidade: cliente.cidade,
           clienteTelefone: cliente.telefone ?? '',
           itens: cart.map(({ produtoId, produtoNome, tamanho, quantidade, precoUnitario }) => ({
-            produtoId, produtoNome, tamanho, quantidade, precoUnitario,
+            produtoId, produtoNome, tamanho, quantidade,
+            precoUnitario: Math.round(precoUnitario * fator * 100) / 100,
           })),
+          observacoes: comissaoConsignado > 0 ? `Comissão do lojista: ${comissaoConsignado}%` : undefined,
         })
 
         qc.invalidateQueries({ queryKey: ['consignacoes'] })
         qc.invalidateQueries({ queryKey: ['produtos'] })
         qc.invalidateQueries({ queryKey: ['dashboard'] })
 
-        setCart([]); setClienteId(''); setFormaPagamento('dinheiro'); setEntrada(0); setNumeroParcelas(2)
+        setCart([]); setClienteId(''); setFormaPagamento('dinheiro'); setEntrada(0); setNumeroParcelas(2); setDescontoPct(0)
         setUltimaOperacao('consignacao')
         setCheckoutOpen(false); setSuccessDialog(true)
         return
@@ -185,7 +199,7 @@ export default function PDVPage() {
 
       if (formaPagamento === 'promissoria') {
         parcelas = []
-        const valorRestante = cartTotal - entrada
+        const valorRestante = totalComDesconto - entrada
         const valorParcela = Math.round((valorRestante / numeroParcelas) * 100) / 100
         const now = new Date()
 
@@ -210,9 +224,10 @@ export default function PDVPage() {
 
       await executarVenda({
         clienteId, clienteNome: cliente.nome, clienteCidade: cliente.cidade,
-        itens, total: cartTotal, formaPagamento,
+        itens, total: totalComDesconto, formaPagamento,
         entrada: formaPagamento === 'promissoria' ? entrada : 0,
         numeroParcelas: formaPagamento === 'promissoria' ? numeroParcelas : 1,
+        observacoes: descontoAplicado > 0 ? `Desconto ${descontoAplicado}% (-${formatCurrency(cartTotal - totalComDesconto)})` : undefined,
         parcelas,
       })
 
@@ -221,7 +236,7 @@ export default function PDVPage() {
       qc.invalidateQueries({ queryKey: ['parcelas'] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })
 
-      setCart([]); setClienteId(''); setFormaPagamento('dinheiro'); setEntrada(0); setNumeroParcelas(2)
+      setCart([]); setClienteId(''); setFormaPagamento('dinheiro'); setEntrada(0); setNumeroParcelas(2); setDescontoPct(0)
       setUltimaOperacao('venda')
       setCheckoutOpen(false); setSuccessDialog(true)
     } catch (err) {
@@ -386,8 +401,8 @@ export default function PDVPage() {
             </div>
             <div className="space-y-1"><Label>Forma de Pagamento</Label>
               <div className="grid grid-cols-2 gap-2">
-                {FP_OPTIONS.map((fp) => (
-                  <button key={fp.value} type="button" onClick={() => setFormaPagamento(fp.value)}
+                {fpOptions.map((fp) => (
+                  <button key={fp.value} type="button" onClick={() => { setFormaPagamento(fp.value); setDescontoPct(0) }}
                     className={`text-sm px-3 py-2 rounded-lg border transition-colors font-medium ${formaPagamento === fp.value ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
                     {fp.label}
                   </button>
@@ -398,7 +413,14 @@ export default function PDVPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1"><Label>Entrada (R$)</Label><Input type="number" min="0" step="0.01" value={entrada} onChange={(e) => setEntrada(Number(e.target.value))} /></div>
                 <div className="space-y-1"><Label>Nº de Parcelas</Label><Input type="number" min="1" max="24" value={numeroParcelas} onChange={(e) => setNumeroParcelas(Number(e.target.value))} /></div>
-                {entrada > 0 && <p className="col-span-2 text-xs text-muted-foreground">{numeroParcelas}× de {formatCurrency((cartTotal - entrada) / numeroParcelas)} mensais</p>}
+                {entrada > 0 && <p className="col-span-2 text-xs text-muted-foreground">{numeroParcelas}× de {formatCurrency((totalComDesconto - entrada) / numeroParcelas)} mensais</p>}
+              </div>
+            )}
+            {descontoPermitido && (
+              <div className="space-y-1">
+                <Label>Desconto (%) <span className="text-xs font-normal text-muted-foreground">— máximo {descontoMax}%</span></Label>
+                <Input type="number" min={0} max={descontoMax} step="0.5" value={descontoPct}
+                  onChange={(e) => setDescontoPct(Math.max(0, Math.min(descontoMax, Number(e.target.value) || 0)))} />
               </div>
             )}
             {formaPagamento === 'consignado' && (
@@ -406,12 +428,19 @@ export default function PDVPage() {
                 <p className="font-semibold text-amber-600 dark:text-amber-400">Entrega em consignação</p>
                 <p>As peças saem do seu estoque agora, mas <strong>nada é faturado</strong>. O lojista paga só o que vender (ao preço de repasse = preço de venda) e devolve o restante no acerto de contas, em <strong>Consignações</strong>.</p>
                 <p className="pt-1">Valor potencial (se vender tudo): <strong className="text-foreground font-mono">{formatCurrency(cartTotal)}</strong></p>
+                {comissaoConsignado > 0 && <p>Comissão do lojista: <strong className="text-amber-600 dark:text-amber-400">{comissaoConsignado}%</strong> — o repasse a receber por peça vendida é o preço de venda menos a comissão.</p>}
               </div>
             )}
             <Separator />
             <div className="space-y-1">
               {cart.map((item, i) => (<div key={i} className="flex justify-between text-sm"><span className="text-muted-foreground">{item.produtoNome}{usarTamanhos ? ` (${item.tamanho})` : ''} ×{item.quantidade}</span><span>{formatCurrency(item.subtotal)}</span></div>))}
-              <div className="flex justify-between font-bold text-base pt-1"><span>Total</span><span>{formatCurrency(cartTotal)}</span></div>
+              {descontoAplicado > 0 && (
+                <>
+                  <div className="flex justify-between text-sm pt-1"><span className="text-muted-foreground">Subtotal</span><span>{formatCurrency(cartTotal)}</span></div>
+                  <div className="flex justify-between text-sm text-green-600 dark:text-green-400"><span>Desconto ({descontoAplicado}%)</span><span>-{formatCurrency(cartTotal - totalComDesconto)}</span></div>
+                </>
+              )}
+              <div className="flex justify-between font-bold text-base pt-1"><span>Total</span><span>{formatCurrency(descontoAplicado > 0 ? totalComDesconto : cartTotal)}</span></div>
             </div>
           </div>
           <DialogFooter className="flex-col sm:flex-row gap-2">

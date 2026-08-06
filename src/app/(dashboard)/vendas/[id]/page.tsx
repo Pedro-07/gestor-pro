@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Combobox } from '@/components/shared/combobox'
-import { ArrowLeft, FileDown, XCircle, Loader2, Pencil } from 'lucide-react'
+import { ArrowLeft, FileDown, XCircle, Loader2, Pencil, Printer } from 'lucide-react'
 import { useAppConfig } from '@/hooks/useAppConfig'
 import { toast } from 'sonner'
 
@@ -27,7 +27,7 @@ const statusMap: Record<string, { label: string; variant: 'default' | 'destructi
 }
 
 export default function VendaDetalhePage() {
-  const { usarTamanhos } = useAppConfig()
+  const { usarTamanhos, nomeApp } = useAppConfig()
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const qc = useQueryClient()
@@ -120,6 +120,52 @@ export default function VendaDetalhePage() {
     pdf.save(`recibo-venda-${venda.clienteNome.replace(/\s+/g, '-')}.pdf`)
   }
 
+  function handleImprimirCupom() {
+    if (!data?.venda) return
+    const { venda, parcelas } = data
+    const esc = (s: string) => (s ?? '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string))
+    const linhas = venda.itens.map((it) =>
+      `<tr><td>${esc(it.produtoNome)}${usarTamanhos ? ` (${esc(it.tamanho)})` : ''}</td><td class="c">${it.quantidade}</td><td class="r">${formatCurrency(it.subtotal)}</td></tr>`
+    ).join('')
+    const parcelasHtml = parcelas && parcelas.length
+      ? `<div class="sec">PARCELAS</div>` + parcelas.map((p) =>
+          `<div class="row"><span>${p.numero === 0 ? 'Entrada' : `Parc ${p.numero}/${p.totalParcelas}`} · ${formatDate(new Date(p.dataVencimento))}</span><span>${formatCurrency(p.valor)}</span></div>`).join('')
+      : ''
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Cupom</title><style>
+      *{font-family:'Courier New',monospace;box-sizing:border-box}
+      body{width:300px;margin:0 auto;padding:10px;color:#000}
+      h1{font-size:16px;text-align:center;margin:0 0 2px}
+      .muted{color:#555;font-size:11px;text-align:center}
+      hr{border:none;border-top:1px dashed #000;margin:8px 0}
+      table{width:100%;font-size:12px;border-collapse:collapse}
+      td{padding:1px 0;vertical-align:top}.c{text-align:center}.r{text-align:right}
+      .row{display:flex;justify-content:space-between;font-size:12px}
+      .tot{display:flex;justify-content:space-between;font-weight:bold;font-size:14px;margin-top:4px}
+      .sec{font-weight:bold;font-size:12px;margin-top:6px}
+      .foot{text-align:center;font-size:10px;color:#777;margin-top:10px}
+    </style></head><body>
+      <h1>${esc(nomeApp)}</h1>
+      <div class="muted">CUPOM DE VENDA</div>
+      <div class="muted">${formatDate(new Date(venda.createdAt))}</div>
+      <hr>
+      <div class="row"><span>Cliente</span><span>${esc(venda.clienteNome)}</span></div>
+      ${venda.clienteCidade ? `<div class="muted" style="text-align:left">${esc(venda.clienteCidade)}</div>` : ''}
+      <hr>
+      <table>${linhas}</table>
+      <hr>
+      <div class="tot"><span>TOTAL</span><span>${formatCurrency(venda.total)}</span></div>
+      <div class="row"><span>Pagamento</span><span>${fpLabel[venda.formaPagamento] ?? venda.formaPagamento}</span></div>
+      ${venda.observacoes ? `<div class="muted" style="text-align:left">${esc(venda.observacoes)}</div>` : ''}
+      ${parcelasHtml}
+      <hr>
+      <div class="foot">Obrigado pela preferência!</div>
+    </body></html>`
+    const w = window.open('', '_blank', 'width=380,height=640')
+    if (!w) { toast.error('Permita pop-ups para imprimir o cupom.'); return }
+    w.document.write(html); w.document.close(); w.focus()
+    setTimeout(() => { w.print() }, 350)
+  }
+
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-8 w-48" /><Skeleton className="h-64 rounded-xl" /></div>
 
   const { venda, parcelas } = data ?? {}
@@ -133,6 +179,7 @@ export default function VendaDetalhePage() {
       <div className="flex items-center justify-between">
         <Button variant="ghost" onClick={() => router.back()} className="-ml-2"><ArrowLeft className="mr-2 h-4 w-4" />Voltar</Button>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={handleImprimirCupom}><Printer className="mr-2 h-4 w-4" />Imprimir</Button>
           <Button variant="outline" size="sm" onClick={handleExportPDF}><FileDown className="mr-2 h-4 w-4" />PDF</Button>
           {!isCanceled && (<><Button variant="outline" size="sm" onClick={openEditDialog}><Pencil className="mr-2 h-4 w-4" />Editar</Button><Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setCancelDialog(true)}><XCircle className="mr-2 h-4 w-4" />Cancelar</Button></>)}
         </div>

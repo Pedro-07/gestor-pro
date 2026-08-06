@@ -16,6 +16,17 @@ import { toast } from 'sonner'
 import { Loader2, Save, UploadCloud, Store, Package, Users, ShoppingCart } from 'lucide-react'
 import Image from 'next/image'
 
+const DEFAULT_MEIOS = {
+  dinheiro: { ativo: true, regra: false, valor: 0 },
+  pix: { ativo: true, regra: false, valor: 0 },
+  cartao: { ativo: true, regra: false, valor: 0 },
+  promissoria: { ativo: true, regra: false, valor: 0 },
+  consignado: { ativo: true, regra: false, valor: 0 },
+}
+const MEIOS: [string, string][] = [
+  ['dinheiro', 'Dinheiro'], ['pix', 'PIX'], ['cartao', 'Cartão'], ['promissoria', 'Nota Promissória'], ['consignado', 'Consignado'],
+]
+
 const defaultTemplates = {
   templateCobranca: 'Olá {nome}! 👋\n\nPassando para lembrar sobre a parcela {numero}/{total} no valor de *{valor}* com vencimento em *{vencimento}*.\n\nPor favor, entre em contato para regularizar. Obrigado!',
   templateInadimplente: 'Olá {nome}. Verificamos que há débitos em aberto referentes às suas compras.\n\nTotal em aberto: *{valor}*.\n\nPor favor, entre em contato urgente para negociação.',
@@ -32,7 +43,7 @@ export default function ConfiguracoesPage() {
   const { data: config, isLoading } = useQuery({ queryKey: ['config'], queryFn: fetchConfig })
 
   const { register, handleSubmit, reset, watch, setValue, control } = useForm<Configuracoes>({
-    defaultValues: { ...defaultTemplates, nomeVendedor: '', telefoneVendedor: '', nomeApp: 'Stok Master', usarTamanhos: true, usarFornecedor: false, usarObservacoes: false, tamanhos: ['PP', 'P', 'M', 'G', 'GG', 'XGG'] },
+    defaultValues: { ...defaultTemplates, nomeVendedor: '', telefoneVendedor: '', nomeApp: 'Stok Master', usarTamanhos: true, usarFornecedor: false, usarObservacoes: false, tamanhos: ['PP', 'P', 'M', 'G', 'GG', 'XGG'], meiosPagamento: DEFAULT_MEIOS },
   })
 
   useEffect(() => {
@@ -48,6 +59,7 @@ export default function ConfiguracoesPage() {
         usarFornecedor: config.usarFornecedor === true,
         usarObservacoes: config.usarObservacoes === true,
         tamanhos: config.tamanhos && config.tamanhos.length ? config.tamanhos : ['PP', 'P', 'M', 'G', 'GG', 'XGG'],
+        meiosPagamento: { ...DEFAULT_MEIOS, ...(config.meiosPagamento ?? {}) },
       })
       if (config.logoUrl) setPreviewUrl(config.logoUrl)
     }
@@ -194,12 +206,51 @@ export default function ConfiguracoesPage() {
             </Card>
           </TabsContent>
 
-          {/* ─── VENDAS: reservado para evoluir ─── */}
+          {/* ─── VENDAS: meios de pagamento ─── */}
           <TabsContent value="vendas" className="space-y-4">
             <Card>
-              <CardHeader><CardTitle>Vendas & PDV</CardTitle><CardDescription>Preferências de vendas e ponto de venda.</CardDescription></CardHeader>
+              <CardHeader><CardTitle>Meios de pagamento</CardTitle><CardDescription>Escolha quais aparecem no PDV e, se quiser, uma regra de desconto máximo (%). No consignado, a regra é de comissão (%).</CardDescription></CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground">Ainda não há configurações de vendas por aqui. Esta seção está pronta para receber novas opções (ex.: forma de pagamento padrão, desconto máximo, impressão de recibo).</p>
+                <Controller name="meiosPagamento" control={control} render={({ field }) => {
+                  const m: Record<string, { ativo: boolean; regra: boolean; valor: number }> = field.value ?? {}
+                  const upd = (key: string, patch: Partial<{ ativo: boolean; regra: boolean; valor: number }>) =>
+                    field.onChange({ ...m, [key]: { ...(m[key] ?? { ativo: true, regra: false, valor: 0 }), ...patch } })
+                  return (
+                    <div className="space-y-3">
+                      {MEIOS.map(([key, label]) => {
+                        const cfg = m[key] ?? { ativo: true, regra: false, valor: 0 }
+                        const isConsignado = key === 'consignado'
+                        return (
+                          <div key={key} className="rounded-lg border p-3 space-y-2">
+                            <label className="flex items-center gap-3 cursor-pointer">
+                              <input type="checkbox" checked={!!cfg.ativo} onChange={(e) => upd(key, { ativo: e.target.checked })} className="h-4 w-4 accent-blue-600 shrink-0" />
+                              <span className="text-sm font-medium">{label}</span>
+                              {isConsignado && <span className="text-[10px] text-muted-foreground uppercase font-semibold">comissão</span>}
+                              {!cfg.ativo && <span className="text-[10px] text-muted-foreground ml-auto">não aparece no PDV</span>}
+                            </label>
+                            {cfg.ativo && (
+                              <div className="pl-7 space-y-2">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                  <input type="checkbox" checked={!!cfg.regra} onChange={(e) => upd(key, { regra: e.target.checked })} className="h-4 w-4 accent-blue-600 shrink-0" />
+                                  <span className="text-sm">{isConsignado ? 'Configurar comissão' : 'Configurar regra de desconto'}</span>
+                                </label>
+                                {cfg.regra && (
+                                  <div className="flex items-center gap-2">
+                                    <Label className="text-xs whitespace-nowrap">{isConsignado ? 'Comissão (%)' : 'Desconto máximo (%)'}</Label>
+                                    <Input type="number" min={0} max={100} value={cfg.valor ?? 0}
+                                      onChange={(e) => upd(key, { valor: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })}
+                                      className="w-24 h-9" />
+                                    <span className="text-xs text-muted-foreground">%</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                }} />
               </CardContent>
             </Card>
           </TabsContent>

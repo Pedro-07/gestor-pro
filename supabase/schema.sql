@@ -170,7 +170,8 @@ CREATE TABLE config (
   "usarTamanhos" BOOLEAN DEFAULT TRUE,
   "usarFornecedor" BOOLEAN DEFAULT FALSE,
   "usarObservacoes" BOOLEAN DEFAULT FALSE,
-  tamanhos JSONB DEFAULT '["PP","P","M","G","GG","XGG"]'
+  tamanhos JSONB DEFAULT '["PP","P","M","G","GG","XGG"]',
+  "meiosPagamento" JSONB DEFAULT '{"dinheiro":{"ativo":true,"regra":false,"valor":0},"pix":{"ativo":true,"regra":false,"valor":0},"cartao":{"ativo":true,"regra":false,"valor":0},"promissoria":{"ativo":true,"regra":false,"valor":0},"consignado":{"ativo":true,"regra":false,"valor":0}}'
 );
 
 -- ─── INDEXES ─────────────────────────────────────────────────────────────────

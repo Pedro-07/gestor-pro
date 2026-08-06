@@ -210,4 +210,12 @@ export interface Configuracoes {
   usarFornecedor?: boolean
   usarObservacoes?: boolean
   tamanhos?: string[]
+  meiosPagamento?: Record<string, MeioPagamentoConfig>
+}
+
+/** Config por meio de pagamento: se aparece no PDV e a regra (desconto % / comissão % no consignado). */
+export interface MeioPagamentoConfig {
+  ativo: boolean
+  regra: boolean
+  valor: number
 }
