@@ -16,9 +16,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { ArrowLeft, MessageCircle, ShoppingCart, Pencil, Loader2 } from 'lucide-react'
 import { useState } from 'react'
-import { useForm, Controller } from 'react-hook-form'
+import { useForm, Controller, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { optionalText } from '@/lib/schema'
 import { toast } from 'sonner'
 
 const editSchema = z.object({
@@ -33,9 +34,9 @@ const editSchema = z.object({
   }, 'Telefone inválido'),
   cidade: z.string().min(2).regex(/^[a-zA-ZÀ-ÿ\s]+$/, 'Apenas letras'),
   endereco: z.string().min(5, 'Endereço completo obrigatório'),
-  observacoes: z.string().optional(),
+  observacoes: optionalText,
   status: z.enum(['ativo', 'inadimplente', 'inativo']),
-  motivoInadimplencia: z.string().optional(),
+  motivoInadimplencia: optionalText,
 })
 type EditForm = z.infer<typeof editSchema>
 
@@ -66,7 +67,7 @@ export default function ClienteDetalhePage() {
   })
 
   const { register, handleSubmit, reset, setValue, watch, control, formState: { errors } } = useForm<EditForm>({
-    resolver: zodResolver(editSchema),
+    resolver: zodResolver(editSchema) as unknown as Resolver<EditForm>,
     defaultValues: { status: 'ativo' },
   })
 
@@ -89,7 +90,8 @@ export default function ClienteDetalhePage() {
       qc.invalidateQueries({ queryKey: ['clientes'] })
       toast.success('Cliente atualizado!')
       setEditOpen(false)
-    } catch {
+    } catch (err) {
+      console.error('Erro ao atualizar cliente:', err)
       toast.error('Erro ao atualizar cliente')
     } finally {
       setSaving(false)

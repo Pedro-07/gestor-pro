@@ -47,7 +47,8 @@ export default function LoginPage() {
       }
       
       router.push('/dashboard')
-    } catch {
+    } catch (err) {
+      console.error('Erro ao fazer login:', err)
       toast.error('Erro de conexão ao fazer login.')
     } finally {
       setLoading(false)

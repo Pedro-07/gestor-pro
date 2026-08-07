@@ -47,7 +47,8 @@ export default function RecuperarSenhaPage() {
       setSentEmail(data.email)
       setSent(true)
       toast.success('Link de recuperação enviado!')
-    } catch {
+    } catch (err) {
+      console.error('Erro ao recuperar senha:', err)
       toast.error('Erro de conexão.')
     } finally {
       setLoading(false)

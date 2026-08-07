@@ -5,8 +5,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchClientes, fetchParcelas, insertCliente, updateCliente, deleteCliente } from '@/lib/database'
 import type { Cliente, ClienteStatus, Parcela } from '@/types'
 import { maskCPFCNPJ, maskPhone, onlyLetters, isValidCPF, isValidCNPJ, generateClientCode, formatCurrency } from '@/lib/utils'
-import { useForm, Controller } from 'react-hook-form'
+import { useForm, Controller, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { optionalText } from '@/lib/schema'
 import { z } from 'zod'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -36,9 +37,9 @@ const clienteSchema = z.object({
   }, 'Telefone inválido — informe DDD + número'),
   cidade: z.string().min(2, 'Cidade obrigatória').regex(/^[a-zA-ZÀ-ÿ\s]+$/, 'Apenas letras'),
   endereco: z.string().min(5, 'Endereço completo obrigatório'),
-  observacoes: z.string().optional(),
+  observacoes: optionalText,
   status: z.enum(['ativo', 'inadimplente', 'inativo']),
-  motivoInadimplencia: z.string().optional(),
+  motivoInadimplencia: optionalText,
 })
 
 type ClienteForm = z.infer<typeof clienteSchema>
@@ -86,7 +87,7 @@ export default function ClientesPage() {
   })
 
   const { register, handleSubmit, reset, setValue, watch, control, formState: { errors } } = useForm<ClienteForm>({
-    resolver: zodResolver(clienteSchema),
+    resolver: zodResolver(clienteSchema) as unknown as Resolver<ClienteForm>,
     defaultValues: { status: 'ativo' },
   })
 
@@ -122,7 +123,8 @@ export default function ClientesPage() {
       }
       qc.invalidateQueries({ queryKey: ['clientes'] })
       setDialogOpen(false)
-    } catch {
+    } catch (err) {
+      console.error('Erro ao salvar cliente:', err)
       toast.error('Erro ao salvar cliente')
     } finally {
       setSaving(false)
@@ -135,7 +137,8 @@ export default function ClientesPage() {
       await updateCliente(c.id, { status: novoStatus })
       qc.invalidateQueries({ queryKey: ['clientes'] })
       toast.success(novoStatus === 'inativo' ? 'Cliente inativado' : 'Cliente reativado')
-    } catch {
+    } catch (err) {
+      console.error('Erro ao inativar/reativar cliente:', err)
       toast.error('Erro ao atualizar o cliente')
     }
   }
@@ -147,6 +150,7 @@ export default function ClientesPage() {
       toast.success('Cliente excluído')
       setDeleteDialog(null)
     } catch (err) {
+      console.error('Erro ao excluir cliente:', err)
       const code = (err as { code?: string })?.code
       if (code === '23503') {
         toast.error('Este cliente tem histórico (vendas/parcelas) e não pode ser excluído. Use "Inativar".')

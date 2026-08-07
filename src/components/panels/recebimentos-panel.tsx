@@ -112,7 +112,8 @@ export function RecebimentosPanel() {
       toast.success('Pagamento registrado!')
       setPagamentoDialog(null)
       reset()
-    } catch {
+    } catch (err) {
+      console.error('Erro ao registrar pagamento:', err)
       toast.error('Erro ao registrar pagamento')
     } finally {
       setSaving(false)

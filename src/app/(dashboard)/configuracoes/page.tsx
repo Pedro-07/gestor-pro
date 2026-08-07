@@ -79,7 +79,8 @@ export default function ConfiguracoesPage() {
       await saveConfig({ ...data, logoUrl: finalLogoUrl })
       qc.invalidateQueries({ queryKey: ['config'] })
       toast.success('Configurações salvas!')
-    } catch {
+    } catch (err) {
+      console.error('Erro ao salvar configurações:', err)
       toast.error('Erro ao salvar configurações')
     } finally {
       setSaving(false)

@@ -63,7 +63,8 @@ export default function CadastroPage() {
 
       toast.success('Conta criada! Verifique sua caixa de entrada para ativar a conta.')
       router.push('/login')
-    } catch {
+    } catch (err) {
+      console.error('Erro ao criar conta:', err)
       toast.error('Erro ao criar conta.')
     } finally {
       setLoading(false)

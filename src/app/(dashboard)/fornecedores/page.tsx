@@ -5,8 +5,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchFornecedores, fetchProdutos, insertFornecedor, updateFornecedor, deleteFornecedor } from '@/lib/database'
 import type { Fornecedor } from '@/types'
 import { maskPhone, onlyLetters } from '@/lib/utils'
-import { useForm } from 'react-hook-form'
+import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { optionalText, optionalTextRefined } from '@/lib/schema'
 import { z } from 'zod'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -21,10 +22,10 @@ import { Plus, Search, MoreVertical, Pencil, Trash2, Phone, Loader2 } from 'luci
 
 const fornecedorSchema = z.object({
   nome: z.string().min(2, 'Nome obrigatório'),
-  contato: z.string().optional(),
-  telefone: z.string().refine((v) => !v || v.replace(/\D/g, '').length >= 10, 'Telefone inválido').optional(),
-  cidade: z.string().refine((v) => !v || /^[a-zA-ZÀ-ÿ\s]+$/.test(v), 'Apenas letras').optional(),
-  observacoes: z.string().optional(),
+  contato: optionalText,
+  telefone: optionalTextRefined((v) => v.replace(/\D/g, '').length >= 10, 'Telefone inválido'),
+  cidade: optionalTextRefined((v) => /^[a-zA-ZÀ-ÿ\s]+$/.test(v), 'Apenas letras'),
+  observacoes: optionalText,
 })
 type FornecedorForm = z.infer<typeof fornecedorSchema>
 
@@ -52,7 +53,7 @@ export default function FornecedoresPage() {
   )
 
   const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<FornecedorForm>({
-    resolver: zodResolver(fornecedorSchema),
+    resolver: zodResolver(fornecedorSchema) as unknown as Resolver<FornecedorForm>,
   })
 
   function openNew() {
@@ -79,7 +80,8 @@ export default function FornecedoresPage() {
       }
       qc.invalidateQueries({ queryKey: ['fornecedores'] })
       setDialogOpen(false)
-    } catch {
+    } catch (err) {
+      console.error('Erro ao salvar fornecedor:', err)
       toast.error('Erro ao salvar fornecedor')
     } finally {
       setSaving(false)
@@ -92,8 +94,10 @@ export default function FornecedoresPage() {
       qc.invalidateQueries({ queryKey: ['fornecedores'] })
       toast.success('Fornecedor excluído')
       setDeleteDialog(null)
-    } catch {
-      toast.error('Erro ao excluir')
+    } catch (err) {
+      const code = (err as { code?: string })?.code
+      console.error('Erro ao excluir fornecedor:', err)
+      toast.error(code === '23503' ? 'Não é possível excluir: há produtos ligados a este fornecedor.' : 'Erro ao excluir')
     }
   }
 

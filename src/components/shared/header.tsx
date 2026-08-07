@@ -44,7 +44,8 @@ export function Header() {
       await supabase.auth.signOut()
       router.push('/login')
       toast.success('Até logo!')
-    } catch {
+    } catch (err) {
+      console.error('Erro ao sair:', err)
       toast.error('Erro ao sair')
     }
   }

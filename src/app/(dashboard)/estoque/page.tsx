@@ -9,6 +9,7 @@ import { useForm, Controller, type Resolver } from 'react-hook-form'
 import { useAppConfig } from '@/hooks/useAppConfig'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { optionalText } from '@/lib/schema'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,13 +32,13 @@ import { BarcodeScanner } from '@/components/shared/barcode-scanner'
 const produtoSchema = z.object({
   codigo: z.string().min(1, 'Código obrigatório'),
   nome: z.string().min(2, 'Nome obrigatório'),
-  descricao: z.string().optional(),
+  descricao: optionalText,
   categoria: z.enum(['camiseta', 'calca', 'vestido', 'saia', 'blusa', 'short', 'jaqueta', 'conjunto', 'outro']),
   precoCusto: z.coerce.number().min(0, 'Valor inválido'),
   precoVenda: z.coerce.number().min(0, 'Valor inválido'),
   // Tamanhos são dinâmicos (definidos em Configurações) → estoque é um mapa livre.
   estoque: z.record(z.string(), z.coerce.number().min(0)).default({}),
-  codigoBarras: z.string().optional(),
+  codigoBarras: optionalText,
 })
 
 type ProdutoForm = z.infer<typeof produtoSchema>
@@ -199,7 +200,8 @@ export default function EstoquePage() {
       qc.invalidateQueries({ queryKey: ['movimentacoes-ids'] })
       if (editingProduto) qc.invalidateQueries({ queryKey: ['movimentacoes', editingProduto.id] })
       setDialogOpen(false)
-    } catch {
+    } catch (err) {
+      console.error('Erro ao salvar produto:', err)
       toast.error('Erro ao salvar produto')
     } finally {
       setSaving(false)
@@ -214,6 +216,7 @@ export default function EstoquePage() {
       setDeleteDialog(null)
     } catch (err) {
       // 23503 = violação de FK (produto tem movimentações) → não pode excluir
+      console.error('Erro ao excluir produto:', err)
       const code = (err as { code?: string })?.code
       if (code === '23503') {
         toast.error('Este produto tem histórico de movimentações e não pode ser excluído. Use "Desativar".')
@@ -230,7 +233,8 @@ export default function EstoquePage() {
       await setProdutoAtivo(p.id, novoAtivo)
       qc.invalidateQueries({ queryKey: ['produtos'] })
       toast.success(novoAtivo ? 'Produto reativado' : 'Produto desativado')
-    } catch {
+    } catch (err) {
+      console.error('Erro ao ativar/desativar produto:', err)
       toast.error('Erro ao atualizar o produto')
     }
   }
@@ -289,7 +293,8 @@ export default function EstoquePage() {
       )
       setCodigoExistente(null)
       setDialogOpen(false)
-    } catch {
+    } catch (err) {
+      console.error('Erro ao dar entrada de estoque:', err)
       toast.error('Erro ao atualizar o estoque')
     } finally {
       setSavingEntrada(false)
