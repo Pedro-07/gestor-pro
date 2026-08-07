@@ -124,8 +124,8 @@ export default function EstoquePage() {
     setFotoFile(null)
     setPreviewUrl(p.fotoUrl ?? null)
     reset({
-      codigo: p.codigo, nome: p.nome, descricao: p.descricao, categoria: p.categoria,
-      precoCusto: p.precoCusto, precoVenda: p.precoVenda, estoque: p.estoque, codigoBarras: p.codigoBarras,
+      codigo: p.codigo, nome: p.nome, descricao: p.descricao ?? '', categoria: p.categoria,
+      precoCusto: p.precoCusto, precoVenda: p.precoVenda, estoque: p.estoque, codigoBarras: p.codigoBarras ?? '',
     })
     setDialogOpen(true)
   }
@@ -760,7 +760,7 @@ export default function EstoquePage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editingProduto ? 'Editar Produto' : 'Novo Produto'}</DialogTitle></DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit as Parameters<typeof handleSubmit>[0])} className="space-y-6">
+          <form onSubmit={handleSubmit(onSubmit as Parameters<typeof handleSubmit>[0], () => toast.error('Verifique os campos obrigatórios.'))} className="space-y-6">
             {/* Imagem */}
             <div className="flex items-center gap-4">
               <div className="w-24 h-24 bg-muted border-2 border-dashed rounded-lg flex items-center justify-center overflow-hidden relative shrink-0">

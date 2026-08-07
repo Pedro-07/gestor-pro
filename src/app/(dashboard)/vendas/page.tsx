@@ -151,8 +151,8 @@ export default function MinhasVendasPage() {
                             <div className="flex items-center gap-3 shrink-0">
                               <div className="text-right hidden sm:block"><p className="font-bold">{formatCurrency(v.total)}</p></div>
                               <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8"><Eye className="h-4 w-4" /></Button>
+                                <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+                                  <Eye className="h-4 w-4" />
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
                                   <DropdownMenuItem onClick={() => router.push(`/vendas/${v.id}`)}>
