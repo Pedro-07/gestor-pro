@@ -395,7 +395,7 @@ export async function fetchMovimentacoesByProduto(produtoId: string): Promise<Mo
 export async function fetchConfig(): Promise<Configuracoes | null> {
   // RLS (loja_id = auth.uid()) irá garantir que só retorne a config daquele lojista
   const { data, error } = await supabase.from('config').select('*').maybeSingle()
-  if (error) return null
+  if (error) { console.error('Erro ao carregar config:', error.message); return null }
   return data as Configuracoes
 }
 

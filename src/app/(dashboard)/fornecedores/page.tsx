@@ -63,7 +63,7 @@ export default function FornecedoresPage() {
 
   function openEdit(f: Fornecedor) {
     setEditingFornecedor(f)
-    reset({ nome: f.nome, contato: f.contato, telefone: f.telefone, cidade: f.cidade, observacoes: f.observacoes })
+    reset({ nome: f.nome, contato: f.contato ?? '', telefone: f.telefone ?? '', cidade: f.cidade ?? '', observacoes: f.observacoes ?? '' })
     setDialogOpen(true)
   }
 
@@ -136,10 +136,8 @@ export default function FornecedoresPage() {
                     )}
                   </div>
                   <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
+                    <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+                      <MoreVertical className="h-4 w-4" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => openEdit(f)}>
@@ -163,7 +161,7 @@ export default function FornecedoresPage() {
           <DialogHeader>
             <DialogTitle>{editingFornecedor ? 'Editar Fornecedor' : 'Novo Fornecedor'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit, () => toast.error('Verifique os campos.'))} className="space-y-4">
             <div className="space-y-1">
               <Label>Nome *</Label>
               <Input placeholder="Nome da empresa/pessoa" {...register('nome')} />

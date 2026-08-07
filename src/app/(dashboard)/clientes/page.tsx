@@ -261,7 +261,7 @@ export default function ClientesPage() {
           <DialogHeader>
             <DialogTitle>{editingCliente ? 'Editar Cliente' : 'Novo Cliente'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit, () => toast.error('Verifique os campos obrigatórios (CPF/CNPJ, endereço, etc.).'))} className="space-y-4">
             {/* Nome */}
             <div className="space-y-1">
               <Label>Nome completo *</Label>

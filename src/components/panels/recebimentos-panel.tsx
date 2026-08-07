@@ -219,7 +219,7 @@ export function RecebimentosPanel() {
               <p>Parcela {pagamentoDialog.numero === 0 ? 'Entrada' : `${pagamentoDialog.numero}/${pagamentoDialog.totalParcelas}`} · Valor: {formatCurrency(pagamentoDialog.valor - pagamentoDialog.valorPago)}</p>
             </div>
           )}
-          <form onSubmit={handleSubmit(onRegistrarPagamento as Parameters<typeof handleSubmit>[0])} className="space-y-4">
+          <form onSubmit={handleSubmit(onRegistrarPagamento as Parameters<typeof handleSubmit>[0], () => toast.error('Verifique o valor do pagamento.'))} className="space-y-4">
             <div className="space-y-1">
               <Label>Valor Pago (R$) *</Label>
               <Input type="number" step="0.01" min="0.01" placeholder="0,00" {...register('valor')} onKeyPress={(e) => { if (!/[\d.,]/.test(e.key)) e.preventDefault() }} />

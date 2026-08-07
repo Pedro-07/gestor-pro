@@ -235,7 +235,7 @@ export default function ClienteDetalhePage() {
           <DialogHeader>
             <DialogTitle>Editar Cliente</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit, () => toast.error('Verifique os campos obrigatórios (CPF/CNPJ, endereço, etc.).'))} className="space-y-4">
             <div className="space-y-1">
               <Label>Nome completo *</Label>
               <Input {...register('nome')} onChange={(e) => setValue('nome', onlyLetters(e.target.value))} />
