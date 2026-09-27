@@ -15,6 +15,7 @@ import {
   ShoppingBag,
   ScanLine,
   Handshake,
+  ClipboardList,
   X,
   ChevronLeft,
   ChevronRight,
@@ -22,12 +23,15 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { useSidebarStore } from '@/store/sidebar-store'
 import { useAppConfig } from '@/hooks/useAppConfig'
+import { useQuery } from '@tanstack/react-query'
+import { fetchPedidosNovosCount } from '@/lib/database'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/clientes', label: 'Clientes', icon: Users },
   { href: '/vendas', label: 'Minhas Vendas', icon: ShoppingCart },
   { href: '/vendas/pdv', label: 'PDV', icon: ScanLine },
+  { href: '/pedidos', label: 'Pedidos', icon: ClipboardList },
   { href: '/consignacoes', label: 'Consignações', icon: Handshake },
   { href: '/financeiro', label: 'Financeiro', icon: DollarSign },
   { href: '/estoque', label: 'Estoque', icon: Package },
@@ -35,11 +39,17 @@ const navItems = [
   { href: '/configuracoes', label: 'Configurações', icon: Settings },
 ]
 
+function usePedidosNovos() {
+  const { data } = useQuery({ queryKey: ['pedidos-novos-count'], queryFn: fetchPedidosNovosCount, staleTime: 60_000 })
+  return data ?? 0
+}
+
 export function Sidebar() {
   const pathname = usePathname()
   const { isOpen, isCollapsed, setOpen, toggleCollapsed } = useSidebarStore()
   const { nomeApp, logoUrl, usarFornecedor, meiosPagamento } = useAppConfig()
   const usarConsignado = meiosPagamento.consignado?.ativo !== false
+  const pedidosNovos = usePedidosNovos()
   const items = navItems.filter(
     (i) =>
       (i.href !== '/fornecedores' || usarFornecedor) &&
@@ -122,8 +132,16 @@ export function Sidebar() {
                     )}
                     title={isCollapsed ? item.label : undefined}
                   >
-                    <Icon className="h-5 w-5 shrink-0" />
-                    {!isCollapsed && <span>{item.label}</span>}
+                    <span className="relative shrink-0">
+                      <Icon className="h-5 w-5" />
+                      {item.href === '/pedidos' && pedidosNovos > 0 && isCollapsed && (
+                        <span className="absolute -top-1.5 -right-1.5 h-4 min-w-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{pedidosNovos}</span>
+                      )}
+                    </span>
+                    {!isCollapsed && <span className="flex-1">{item.label}</span>}
+                    {item.href === '/pedidos' && pedidosNovos > 0 && !isCollapsed && (
+                      <span className="h-5 min-w-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{pedidosNovos}</span>
+                    )}
                   </Link>
                 </li>
               )

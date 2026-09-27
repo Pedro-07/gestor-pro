@@ -214,6 +214,10 @@ export interface Configuracoes {
   meiosPagamento?: Record<string, MeioPagamentoConfig>
   /** Quais campos são obrigatórios no cadastro de cliente. O "nome" é sempre obrigatório. */
   camposObrigatoriosCliente?: CamposObrigatoriosCliente
+  /** Identificador público da loja na URL do catálogo online (/loja/<slug>). */
+  slug?: string | null
+  /** Liga/desliga o catálogo público (loja online). */
+  catalogoAtivo?: boolean
 }
 
 /** Obrigatoriedade configurável dos campos do cadastro de cliente. */
@@ -229,4 +233,56 @@ export interface MeioPagamentoConfig {
   ativo: boolean
   regra: boolean
   valor: number
+}
+
+// ─── PEDIDO (catálogo público / loja online) ─────────────────────────────────
+export type PedidoStatus = 'novo' | 'finalizado' | 'cancelado'
+
+export interface PedidoItem {
+  produtoId: string
+  produtoNome: string
+  tamanho: Tamanho
+  quantidade: number
+  precoUnitario: number
+  subtotal: number
+}
+
+export interface Pedido {
+  id: string
+  clienteNome: string
+  clienteCpfCnpj: string
+  clienteTelefone: string
+  clienteCidade: string
+  clienteEndereco: string
+  clienteObservacoes?: string
+  itens: PedidoItem[]
+  total: number
+  observacoes?: string
+  status: PedidoStatus
+  vendaId?: string
+  createdAt: string
+  updatedAt: string
+}
+
+/** Dados públicos da loja retornados pelo catálogo (RPC catalogo_loja). */
+export interface CatalogoLoja {
+  lojaId: string
+  nomeApp: string
+  logoUrl?: string | null
+  telefoneVendedor: string
+  usarTamanhos: boolean
+  tamanhos: string[]
+  camposObrigatoriosCliente: CamposObrigatoriosCliente
+}
+
+/** Produto exposto no catálogo público (RPC catalogo_produtos). */
+export interface CatalogoProduto {
+  id: string
+  codigo: string
+  nome: string
+  descricao?: string | null
+  categoria: CategoriaProduto
+  precoVenda: number
+  estoque: EstoquePorTamanho
+  fotoUrl?: string | null
 }

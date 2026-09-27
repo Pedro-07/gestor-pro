@@ -68,6 +68,18 @@ export function buildWhatsAppUrl(phone: string, message: string): string {
   return `https://wa.me/${fullNumber}?text=${encodeURIComponent(message)}`
 }
 
+/** Gera um slug URL-safe a partir de um texto livre (ex.: nome da loja). */
+export function slugify(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '') // remove diacríticos (acentos)
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-') // não-alfanumérico vira hífen
+    .replace(/^-+|-+$/g, '') // remove hífens das pontas
+    .slice(0, 40)
+}
+
 export function generateInstallments(
   total: number,
   count: number,

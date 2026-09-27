@@ -13,8 +13,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useForm, Controller } from 'react-hook-form'
 import { toast } from 'sonner'
-import { Loader2, Save, UploadCloud, Store, Package, Users, ShoppingCart } from 'lucide-react'
+import { Loader2, Save, UploadCloud, Store, Package, Users, ShoppingCart, Globe, Copy, Check, ExternalLink } from 'lucide-react'
 import Image from 'next/image'
+import { slugify } from '@/lib/utils'
 
 const DEFAULT_MEIOS = {
   dinheiro: { ativo: true, regra: false, valor: 0 },
@@ -47,11 +48,15 @@ export default function ConfiguracoesPage() {
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [novoTamanho, setNovoTamanho] = useState('')
+  const [copiado, setCopiado] = useState(false)
+  const [origin, setOrigin] = useState('')
+
+  useEffect(() => { setOrigin(window.location.origin) }, [])
 
   const { data: config, isLoading } = useQuery({ queryKey: ['config'], queryFn: fetchConfig })
 
   const { register, handleSubmit, reset, watch, setValue, control } = useForm<Configuracoes>({
-    defaultValues: { ...defaultTemplates, nomeVendedor: '', telefoneVendedor: '', nomeApp: 'Stok Master', usarTamanhos: true, usarFornecedor: false, usarObservacoes: false, tamanhos: ['PP', 'P', 'M', 'G', 'GG', 'XGG'], meiosPagamento: DEFAULT_MEIOS, camposObrigatoriosCliente: DEFAULT_CAMPOS_CLIENTE },
+    defaultValues: { ...defaultTemplates, nomeVendedor: '', telefoneVendedor: '', nomeApp: 'Stok Master', usarTamanhos: true, usarFornecedor: false, usarObservacoes: false, tamanhos: ['PP', 'P', 'M', 'G', 'GG', 'XGG'], meiosPagamento: DEFAULT_MEIOS, camposObrigatoriosCliente: DEFAULT_CAMPOS_CLIENTE, slug: '', catalogoAtivo: false },
   })
 
   useEffect(() => {
@@ -69,6 +74,8 @@ export default function ConfiguracoesPage() {
         tamanhos: config.tamanhos && config.tamanhos.length ? config.tamanhos : ['PP', 'P', 'M', 'G', 'GG', 'XGG'],
         meiosPagamento: { ...DEFAULT_MEIOS, ...(config.meiosPagamento ?? {}) },
         camposObrigatoriosCliente: { ...DEFAULT_CAMPOS_CLIENTE, ...(config.camposObrigatoriosCliente ?? {}) },
+        slug: config.slug ?? '',
+        catalogoAtivo: config.catalogoAtivo === true,
       })
       if (config.logoUrl) setPreviewUrl(config.logoUrl)
     }
@@ -85,12 +92,19 @@ export default function ConfiguracoesPage() {
         finalLogoUrl = await uploadFile(path, logoFile)
       }
 
-      await saveConfig({ ...data, logoUrl: finalLogoUrl })
+      // slug vazio → null (evita conflito de unicidade entre lojas sem catálogo)
+      const slugNormalizado = data.slug ? slugify(data.slug) : ''
+      await saveConfig({ ...data, logoUrl: finalLogoUrl, slug: slugNormalizado || null })
       qc.invalidateQueries({ queryKey: ['config'] })
       toast.success('Configurações salvas!')
     } catch (err) {
       console.error('Erro ao salvar configurações:', err)
-      toast.error('Erro ao salvar configurações')
+      const code = (err as { code?: string })?.code
+      if (code === '23505') {
+        toast.error('Esse endereço de loja (slug) já está em uso. Escolha outro.')
+      } else {
+        toast.error('Erro ao salvar configurações')
+      }
     } finally {
       setSaving(false)
     }
@@ -107,6 +121,7 @@ export default function ConfiguracoesPage() {
             <TabsTrigger value="estoque"><Package className="h-4 w-4 mr-2 shrink-0" /><span className="truncate">Estoque</span></TabsTrigger>
             <TabsTrigger value="clientes"><Users className="h-4 w-4 mr-2 shrink-0" /><span className="truncate">Clientes</span></TabsTrigger>
             <TabsTrigger value="vendas"><ShoppingCart className="h-4 w-4 mr-2 shrink-0" /><span className="truncate">Vendas</span></TabsTrigger>
+            <TabsTrigger value="loja"><Globe className="h-4 w-4 mr-2 shrink-0" /><span className="truncate">Loja Online</span></TabsTrigger>
           </TabsList>
 
           {/* ─── GERAL: identidade e dados da loja ─── */}
@@ -279,6 +294,79 @@ export default function ConfiguracoesPage() {
                     </div>
                   )
                 }} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ─── LOJA ONLINE: catálogo público + link ─── */}
+          <TabsContent value="loja" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Catálogo online (link para clientes)</CardTitle>
+                <CardDescription>Gere um link com sua vitrine. O cliente vê seus produtos em tempo real, monta o carrinho e envia o pedido — que aparece na aba <strong>Pedidos</strong> e no seu WhatsApp.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Controller name="catalogoAtivo" control={control} render={({ field }) => (
+                  <label className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
+                    <input type="checkbox" checked={!!field.value} onChange={(e) => field.onChange(e.target.checked)} className="mt-0.5 h-4 w-4 accent-blue-600 shrink-0" />
+                    <div><p className="text-sm font-medium">Ativar catálogo online</p><p className="text-xs text-muted-foreground">Quando ligado, o link abaixo fica acessível para seus clientes. Desligado, o link fica indisponível.</p></div>
+                  </label>
+                )} />
+
+                <div className="space-y-1">
+                  <Label>Endereço da loja (slug)</Label>
+                  <div className="flex items-center rounded-lg border overflow-hidden focus-within:ring-2 focus-within:ring-ring">
+                    <span className="pl-3 pr-1 text-sm text-muted-foreground shrink-0 whitespace-nowrap">{(origin || 'https://...') + '/loja/'}</span>
+                    <Input
+                      {...register('slug')}
+                      onChange={(e) => setValue('slug', slugify(e.target.value))}
+                      placeholder="minha-loja"
+                      className="border-0 focus-visible:ring-0 px-0 flex-1 min-w-0"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Use letras, números e hífens. Sugestão a partir do nome:{' '}
+                    <button type="button" className="underline hover:text-foreground" onClick={() => setValue('slug', slugify(watch('nomeApp') || ''))}>
+                      {slugify(watch('nomeApp') || '') || 'minha-loja'}
+                    </button>
+                  </p>
+                </div>
+
+                {(() => {
+                  const slugAtual = slugify(watch('slug') ?? '')
+                  const link = origin && slugAtual ? `${origin}/loja/${slugAtual}` : ''
+                  const catalogoOn = !!watch('catalogoAtivo')
+                  const semTelefone = !((watch('telefoneVendedor') ?? '').trim())
+                  return (
+                    <>
+                      {slugAtual ? (
+                        <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                          <p className="text-xs text-muted-foreground">Seu link público:</p>
+                          <div className="flex items-center gap-2">
+                            <code className="text-sm font-mono break-all flex-1">{link}</code>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button type="button" variant="secondary" size="sm" disabled={!link}
+                              onClick={async () => { await navigator.clipboard.writeText(link); setCopiado(true); toast.success('Link copiado!'); setTimeout(() => setCopiado(false), 2000) }}>
+                              {copiado ? <Check className="h-4 w-4 mr-1.5" /> : <Copy className="h-4 w-4 mr-1.5" />}{copiado ? 'Copiado' : 'Copiar link'}
+                            </Button>
+                            <Button type="button" variant="outline" size="sm" disabled={!link} onClick={() => window.open(link, '_blank')}>
+                              <ExternalLink className="h-4 w-4 mr-1.5" />Abrir
+                            </Button>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground">Salve as alterações para o link começar a funcionar.</p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Defina um endereço acima para gerar o link.</p>
+                      )}
+
+                      {catalogoOn && semTelefone && (
+                        <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-600 dark:text-amber-400">
+                          Preencha o <strong>Telefone (WhatsApp)</strong> na aba <strong>Geral</strong> — é para lá que os pedidos dos clientes serão enviados.
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
               </CardContent>
             </Card>
           </TabsContent>

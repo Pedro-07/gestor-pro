@@ -4,6 +4,7 @@ import type {
   Configuracoes, FormaPagamento, ItemVenda, Tamanho,
   MovimentacaoEstoque,
   Consignacao, AcertoConsignacao, FormaPagamentoRecebimento,
+  Pedido, PedidoItem, CatalogoLoja, CatalogoProduto,
 } from '@/types'
 
 // ─── CLIENTES ────────────────────────────────────────────────────────────────
@@ -404,6 +405,77 @@ export async function saveConfig(config: Partial<Configuracoes>) {
   if (!user) throw new Error('Não autenticado')
   const { error } = await supabase.from('config').upsert({ loja_id: user.id, ...config })
   if (error) throw error
+}
+
+// ─── PEDIDOS (loja online) — lado da dona ────────────────────────────────────
+
+export async function fetchPedidos(): Promise<Pedido[]> {
+  const { data, error } = await supabase.from('pedidos').select('*').order('createdAt', { ascending: false })
+  if (error) throw error
+  return data as Pedido[]
+}
+
+export async function fetchPedidosNovosCount(): Promise<number> {
+  const { count, error } = await supabase
+    .from('pedidos')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'novo')
+  if (error) throw error
+  return count ?? 0
+}
+
+export async function cancelarPedido(id: string) {
+  const { error } = await supabase
+    .from('pedidos')
+    .update({ status: 'cancelado', updatedAt: new Date().toISOString() })
+    .eq('id', id)
+  if (error) throw error
+}
+
+/** Marca o pedido como finalizado e o vincula à venda gerada. */
+export async function marcarPedidoFinalizado(id: string, vendaId: string) {
+  const { error } = await supabase
+    .from('pedidos')
+    .update({ status: 'finalizado', vendaId, updatedAt: new Date().toISOString() })
+    .eq('id', id)
+  if (error) throw error
+}
+
+/** Insere um cliente e retorna o registro criado (usado ao finalizar um pedido). */
+export async function insertClienteRetornando(cliente: Partial<Cliente>): Promise<Cliente> {
+  const { data, error } = await supabase.from('clientes').insert(cliente).select('*').single()
+  if (error) throw error
+  return data as Cliente
+}
+
+// ─── CATÁLOGO PÚBLICO (cliente anônimo, via RPC SECURITY DEFINER) ────────────
+
+export async function fetchCatalogoLoja(slug: string): Promise<CatalogoLoja | null> {
+  const { data, error } = await supabase.rpc('catalogo_loja', { p_slug: slug })
+  if (error) throw new Error(error.message)
+  return (data as CatalogoLoja | null) ?? null
+}
+
+export async function fetchCatalogoProdutos(slug: string): Promise<CatalogoProduto[]> {
+  const { data, error } = await supabase.rpc('catalogo_produtos', { p_slug: slug })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as CatalogoProduto[]
+}
+
+export async function criarPedidoPublico(params: {
+  slug: string
+  cliente: { nome: string; cpfCnpj?: string; telefone?: string; cidade?: string; endereco?: string; observacoes?: string }
+  itens: { produtoId: string; tamanho: string; quantidade: number }[]
+  observacoes?: string
+}): Promise<{ pedidoId: string; total: number; itens: PedidoItem[] }> {
+  const { data, error } = await supabase.rpc('criar_pedido', {
+    p_slug: params.slug,
+    p_cliente: params.cliente,
+    p_itens: params.itens,
+    p_observacoes: params.observacoes ?? '',
+  })
+  if (error) throw new Error(error.message)
+  return data as { pedidoId: string; total: number; itens: PedidoItem[] }
 }
 
 // ─── DASHBOARD ───────────────────────────────────────────────────────────────

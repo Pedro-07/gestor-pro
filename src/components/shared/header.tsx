@@ -22,6 +22,7 @@ const pageTitle: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/clientes': 'Clientes',
   '/vendas': 'Vendas',
+  '/pedidos': 'Pedidos',
   '/financeiro': 'Financeiro',
   '/estoque': 'Estoque',
   '/fornecedores': 'Fornecedores',

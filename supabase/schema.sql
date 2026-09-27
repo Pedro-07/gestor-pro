@@ -173,7 +173,29 @@ CREATE TABLE config (
   "usarObservacoes" BOOLEAN DEFAULT FALSE,
   tamanhos JSONB DEFAULT '["PP","P","M","G","GG","XGG"]',
   "meiosPagamento" JSONB DEFAULT '{"dinheiro":{"ativo":true,"regra":false,"valor":0},"pix":{"ativo":true,"regra":false,"valor":0},"cartao":{"ativo":true,"regra":false,"valor":0},"promissoria":{"ativo":true,"regra":false,"valor":0},"consignado":{"ativo":true,"regra":false,"valor":0}}',
-  "camposObrigatoriosCliente" JSONB DEFAULT '{"cpfCnpj":true,"telefone":true,"cidade":true,"endereco":true}'
+  "camposObrigatoriosCliente" JSONB DEFAULT '{"cpfCnpj":true,"telefone":true,"cidade":true,"endereco":true}',
+  slug TEXT,
+  "catalogoAtivo" BOOLEAN DEFAULT FALSE
+);
+CREATE UNIQUE INDEX idx_config_slug ON config (slug) WHERE slug IS NOT NULL;
+
+-- ─── PEDIDOS (catálogo público / loja online) ────────────────────────────────
+CREATE TABLE pedidos (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  loja_id UUID NOT NULL,
+  "clienteNome" TEXT NOT NULL,
+  "clienteCpfCnpj" TEXT NOT NULL DEFAULT '',
+  "clienteTelefone" TEXT NOT NULL DEFAULT '',
+  "clienteCidade" TEXT NOT NULL DEFAULT '',
+  "clienteEndereco" TEXT NOT NULL DEFAULT '',
+  "clienteObservacoes" TEXT,
+  itens JSONB NOT NULL DEFAULT '[]',
+  total NUMERIC(10,2) NOT NULL DEFAULT 0,
+  observacoes TEXT,
+  status TEXT NOT NULL DEFAULT 'novo' CHECK (status IN ('novo','finalizado','cancelado')),
+  "vendaId" UUID,
+  "createdAt" TIMESTAMPTZ DEFAULT now(),
+  "updatedAt" TIMESTAMPTZ DEFAULT now()
 );
 
 -- ─── INDEXES ─────────────────────────────────────────────────────────────────
@@ -189,6 +211,8 @@ CREATE INDEX idx_parcelas_cliente ON parcelas ("clienteId");
 CREATE INDEX idx_movimentacoes_loja ON movimentacoes (loja_id);
 CREATE INDEX idx_movimentacoes_produto ON movimentacoes ("produtoId");
 CREATE INDEX idx_consignacoes_loja ON consignacoes (loja_id);
+CREATE INDEX idx_pedidos_loja ON pedidos (loja_id);
+CREATE INDEX idx_pedidos_status ON pedidos (loja_id, status);
 CREATE INDEX idx_consignacoes_cliente ON consignacoes ("clienteId");
 CREATE INDEX idx_consignacoes_status ON consignacoes (status);
 CREATE INDEX idx_acertos_loja ON consignacao_acertos (loja_id);
@@ -227,6 +251,7 @@ ALTER TABLE movimentacoes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE consignacoes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE consignacao_acertos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pedidos ENABLE ROW LEVEL SECURITY;
 
 -- Policies: usuários autenticados só podem acessar dados da própria loja (loja_id = auth.uid())
 CREATE POLICY "Isolamento por Loja" ON clientes FOR ALL USING (loja_id = auth.uid());
@@ -238,6 +263,7 @@ CREATE POLICY "Isolamento por Loja" ON movimentacoes FOR ALL USING (loja_id = au
 CREATE POLICY "Isolamento por Loja" ON consignacoes FOR ALL USING (loja_id = auth.uid());
 CREATE POLICY "Isolamento por Loja" ON consignacao_acertos FOR ALL USING (loja_id = auth.uid());
 CREATE POLICY "Isolamento por Loja" ON config FOR ALL USING (loja_id = auth.uid());
+CREATE POLICY "Isolamento por Loja" ON pedidos FOR ALL USING (loja_id = auth.uid());
 
 -- ─── STORAGE ─────────────────────────────────────────────────────────────────
 -- Criar bucket para fotos
