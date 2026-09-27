@@ -38,8 +38,13 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname()
   const { isOpen, isCollapsed, setOpen, toggleCollapsed } = useSidebarStore()
-  const { nomeApp, logoUrl, usarFornecedor } = useAppConfig()
-  const items = navItems.filter((i) => i.href !== '/fornecedores' || usarFornecedor)
+  const { nomeApp, logoUrl, usarFornecedor, meiosPagamento } = useAppConfig()
+  const usarConsignado = meiosPagamento.consignado?.ativo !== false
+  const items = navItems.filter(
+    (i) =>
+      (i.href !== '/fornecedores' || usarFornecedor) &&
+      (i.href !== '/consignacoes' || usarConsignado)
+  )
 
   return (
     <>
@@ -141,7 +146,9 @@ export function Sidebar() {
 // Mobile bottom navigation
 export function BottomNav() {
   const pathname = usePathname()
-  const mainItems = navItems.slice(0, 5)
+  const { meiosPagamento } = useAppConfig()
+  const usarConsignado = meiosPagamento.consignado?.ativo !== false
+  const mainItems = navItems.filter((i) => i.href !== '/consignacoes' || usarConsignado).slice(0, 5)
 
   return (
     <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-card border-t z-40">
