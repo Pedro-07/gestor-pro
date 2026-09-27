@@ -27,6 +27,14 @@ const MEIOS: [string, string][] = [
   ['dinheiro', 'Dinheiro'], ['pix', 'PIX'], ['cartao', 'Cartão'], ['promissoria', 'Nota Promissória'], ['consignado', 'Consignado'],
 ]
 
+const DEFAULT_CAMPOS_CLIENTE = { cpfCnpj: true, telefone: true, cidade: true, endereco: true }
+const CAMPOS_CLIENTE: [keyof typeof DEFAULT_CAMPOS_CLIENTE, string, string][] = [
+  ['cpfCnpj', 'CPF / CNPJ', 'Documento do cliente.'],
+  ['telefone', 'Telefone (WhatsApp)', 'Usado para cobrança e mensagens.'],
+  ['cidade', 'Cidade', 'Cidade do cliente.'],
+  ['endereco', 'Endereço completo', 'Rua, número e bairro.'],
+]
+
 const defaultTemplates = {
   templateCobranca: 'Olá {nome}! 👋\n\nPassando para lembrar sobre a parcela {numero}/{total} no valor de *{valor}* com vencimento em *{vencimento}*.\n\nPor favor, entre em contato para regularizar. Obrigado!',
   templateInadimplente: 'Olá {nome}. Verificamos que há débitos em aberto referentes às suas compras.\n\nTotal em aberto: *{valor}*.\n\nPor favor, entre em contato urgente para negociação.',
@@ -43,7 +51,7 @@ export default function ConfiguracoesPage() {
   const { data: config, isLoading } = useQuery({ queryKey: ['config'], queryFn: fetchConfig })
 
   const { register, handleSubmit, reset, watch, setValue, control } = useForm<Configuracoes>({
-    defaultValues: { ...defaultTemplates, nomeVendedor: '', telefoneVendedor: '', nomeApp: 'Stok Master', usarTamanhos: true, usarFornecedor: false, usarObservacoes: false, tamanhos: ['PP', 'P', 'M', 'G', 'GG', 'XGG'], meiosPagamento: DEFAULT_MEIOS },
+    defaultValues: { ...defaultTemplates, nomeVendedor: '', telefoneVendedor: '', nomeApp: 'Stok Master', usarTamanhos: true, usarFornecedor: false, usarObservacoes: false, tamanhos: ['PP', 'P', 'M', 'G', 'GG', 'XGG'], meiosPagamento: DEFAULT_MEIOS, camposObrigatoriosCliente: DEFAULT_CAMPOS_CLIENTE },
   })
 
   useEffect(() => {
@@ -60,6 +68,7 @@ export default function ConfiguracoesPage() {
         usarObservacoes: config.usarObservacoes === true,
         tamanhos: config.tamanhos && config.tamanhos.length ? config.tamanhos : ['PP', 'P', 'M', 'G', 'GG', 'XGG'],
         meiosPagamento: { ...DEFAULT_MEIOS, ...(config.meiosPagamento ?? {}) },
+        camposObrigatoriosCliente: { ...DEFAULT_CAMPOS_CLIENTE, ...(config.camposObrigatoriosCliente ?? {}) },
       })
       if (config.logoUrl) setPreviewUrl(config.logoUrl)
     }
@@ -193,8 +202,26 @@ export default function ConfiguracoesPage() {
             </Card>
           </TabsContent>
 
-          {/* ─── CLIENTES: mensagens enviadas ao cliente ─── */}
+          {/* ─── CLIENTES: campos obrigatórios + mensagens enviadas ao cliente ─── */}
           <TabsContent value="clientes" className="space-y-4">
+            <Card>
+              <CardHeader><CardTitle>Campos obrigatórios do cliente</CardTitle><CardDescription>Escolha quais campos são obrigatórios ao cadastrar/editar um cliente. O nome é sempre obrigatório.</CardDescription></CardHeader>
+              <CardContent className="space-y-2">
+                <Controller name="camposObrigatoriosCliente" control={control} render={({ field }) => {
+                  const c = { ...DEFAULT_CAMPOS_CLIENTE, ...(field.value ?? {}) }
+                  return (
+                    <>
+                      {CAMPOS_CLIENTE.map(([key, label, hint]) => (
+                        <label key={key} className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
+                          <input type="checkbox" checked={!!c[key]} onChange={(e) => field.onChange({ ...c, [key]: e.target.checked })} className="mt-0.5 h-4 w-4 accent-blue-600 shrink-0" />
+                          <div><p className="text-sm font-medium">{label}</p><p className="text-xs text-muted-foreground">{hint} {c[key] ? 'Obrigatório.' : 'Opcional — pode ficar em branco.'}</p></div>
+                        </label>
+                      ))}
+                    </>
+                  )
+                }} />
+              </CardContent>
+            </Card>
             <Card>
               <CardHeader><CardTitle>Mensagens ao cliente (WhatsApp)</CardTitle><CardDescription>Modelos usados na cobrança e nos avisos. Use as variáveis entre chaves para personalizar automaticamente.</CardDescription></CardHeader>
               <CardContent className="space-y-6">

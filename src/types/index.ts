@@ -212,6 +212,16 @@ export interface Configuracoes {
   usarObservacoes?: boolean
   tamanhos?: string[]
   meiosPagamento?: Record<string, MeioPagamentoConfig>
+  /** Quais campos são obrigatórios no cadastro de cliente. O "nome" é sempre obrigatório. */
+  camposObrigatoriosCliente?: CamposObrigatoriosCliente
+}
+
+/** Obrigatoriedade configurável dos campos do cadastro de cliente. */
+export interface CamposObrigatoriosCliente {
+  cpfCnpj: boolean
+  telefone: boolean
+  cidade: boolean
+  endereco: boolean
 }
 
 /** Config por meio de pagamento: se aparece no PDV e a regra (desconto % / comissão % no consignado). */

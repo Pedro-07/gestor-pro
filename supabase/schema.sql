@@ -172,7 +172,8 @@ CREATE TABLE config (
   "usarFornecedor" BOOLEAN DEFAULT FALSE,
   "usarObservacoes" BOOLEAN DEFAULT FALSE,
   tamanhos JSONB DEFAULT '["PP","P","M","G","GG","XGG"]',
-  "meiosPagamento" JSONB DEFAULT '{"dinheiro":{"ativo":true,"regra":false,"valor":0},"pix":{"ativo":true,"regra":false,"valor":0},"cartao":{"ativo":true,"regra":false,"valor":0},"promissoria":{"ativo":true,"regra":false,"valor":0},"consignado":{"ativo":true,"regra":false,"valor":0}}'
+  "meiosPagamento" JSONB DEFAULT '{"dinheiro":{"ativo":true,"regra":false,"valor":0},"pix":{"ativo":true,"regra":false,"valor":0},"cartao":{"ativo":true,"regra":false,"valor":0},"promissoria":{"ativo":true,"regra":false,"valor":0},"consignado":{"ativo":true,"regra":false,"valor":0}}',
+  "camposObrigatoriosCliente" JSONB DEFAULT '{"cpfCnpj":true,"telefone":true,"cidade":true,"endereco":true}'
 );
 
 -- ─── INDEXES ─────────────────────────────────────────────────────────────────

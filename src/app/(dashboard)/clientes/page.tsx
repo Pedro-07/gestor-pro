@@ -1,13 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchClientes, fetchParcelas, insertCliente, updateCliente, deleteCliente } from '@/lib/database'
-import type { Cliente, ClienteStatus, Parcela } from '@/types'
+import type { Cliente, ClienteStatus, Parcela, CamposObrigatoriosCliente } from '@/types'
+import { useAppConfig } from '@/hooks/useAppConfig'
 import { maskCPFCNPJ, maskPhone, onlyLetters, isValidCPF, isValidCNPJ, generateClientCode, formatCurrency } from '@/lib/utils'
 import { useForm, Controller, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { optionalText } from '@/lib/schema'
+import { optionalText, optionalTextRefined } from '@/lib/schema'
 import { z } from 'zod'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -25,24 +26,60 @@ import { useRouter } from 'next/navigation'
 import { buildWhatsAppUrl, formatPhone, formatCPFCNPJ } from '@/lib/utils'
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
-const clienteSchema = z.object({
-  nome: z.string().min(3, 'Mínimo 3 caracteres').regex(/^[a-zA-ZÀ-ÿ\s]+$/, 'Apenas letras e espaços'),
-  cpfCnpj: z.string().refine((v) => {
-    const d = v.replace(/\D/g, '')
-    return d.length === 11 ? isValidCPF(v) : d.length === 14 ? isValidCNPJ(v) : false
-  }, 'CPF ou CNPJ inválido'),
-  telefone: z.string().refine((v) => {
-    const d = v.replace(/\D/g, '')
-    return d.length >= 10 && d.length <= 11
-  }, 'Telefone inválido — informe DDD + número'),
-  cidade: z.string().min(2, 'Cidade obrigatória').regex(/^[a-zA-ZÀ-ÿ\s]+$/, 'Apenas letras'),
-  endereco: z.string().min(5, 'Endereço completo obrigatório'),
-  observacoes: optionalText,
-  status: z.enum(['ativo', 'inadimplente', 'inativo']),
-  motivoInadimplencia: optionalText,
-})
+// Validadores reaproveitados nas variantes obrigatória/opcional de cada campo.
+const isValidDoc = (v: string) => {
+  const d = v.replace(/\D/g, '')
+  return d.length === 11 ? isValidCPF(v) : d.length === 14 ? isValidCNPJ(v) : false
+}
+const isValidTel = (v: string) => {
+  const d = v.replace(/\D/g, '')
+  return d.length >= 10 && d.length <= 11
+}
+const isCidade = (v: string) => /^[a-zA-ZÀ-ÿ\s]+$/.test(v)
 
-type ClienteForm = z.infer<typeof clienteSchema>
+// Campos cuja obrigatoriedade o lojista configura (nome é sempre obrigatório).
+const CAMPO_SCHEMAS = {
+  cpfCnpj: {
+    req: z.string().refine(isValidDoc, 'CPF ou CNPJ inválido'),
+    opt: optionalTextRefined(isValidDoc, 'CPF ou CNPJ inválido'),
+  },
+  telefone: {
+    req: z.string().refine(isValidTel, 'Telefone inválido — informe DDD + número'),
+    opt: optionalTextRefined(isValidTel, 'Telefone inválido — informe DDD + número'),
+  },
+  cidade: {
+    req: z.string().min(2, 'Cidade obrigatória').regex(/^[a-zA-ZÀ-ÿ\s]+$/, 'Apenas letras'),
+    opt: optionalTextRefined(isCidade, 'Apenas letras'),
+  },
+  endereco: {
+    req: z.string().min(5, 'Endereço completo obrigatório'),
+    opt: optionalText,
+  },
+} as const
+
+function buildClienteSchema(req: CamposObrigatoriosCliente) {
+  return z.object({
+    nome: z.string().min(3, 'Mínimo 3 caracteres').regex(/^[a-zA-ZÀ-ÿ\s]+$/, 'Apenas letras e espaços'),
+    cpfCnpj: req.cpfCnpj ? CAMPO_SCHEMAS.cpfCnpj.req : CAMPO_SCHEMAS.cpfCnpj.opt,
+    telefone: req.telefone ? CAMPO_SCHEMAS.telefone.req : CAMPO_SCHEMAS.telefone.opt,
+    cidade: req.cidade ? CAMPO_SCHEMAS.cidade.req : CAMPO_SCHEMAS.cidade.opt,
+    endereco: req.endereco ? CAMPO_SCHEMAS.endereco.req : CAMPO_SCHEMAS.endereco.opt,
+    observacoes: optionalText,
+    status: z.enum(['ativo', 'inadimplente', 'inativo']),
+    motivoInadimplencia: optionalText,
+  })
+}
+
+interface ClienteForm {
+  nome: string
+  cpfCnpj: string
+  telefone: string
+  cidade: string
+  endereco: string
+  observacoes?: string
+  status: ClienteStatus
+  motivoInadimplencia?: string
+}
 
 const statusConfig: Record<ClienteStatus, { label: string; variant: 'default' | 'destructive' | 'secondary' }> = {
   ativo: { label: 'Ativo', variant: 'default' },
@@ -86,8 +123,17 @@ export default function ClientesPage() {
     return matchSearch && matchCidade && matchStatus
   })
 
+  const { camposObrigatoriosCliente: req } = useAppConfig()
+  // Dependemos dos booleanos (não do objeto `req`, cuja identidade muda a cada render).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const schema = useMemo(() => buildClienteSchema(req), [req.cpfCnpj, req.telefone, req.cidade, req.endereco])
+  // Ref para o resolver enxergar sempre o schema atual (a config chega de forma assíncrona).
+  const schemaRef = useRef(schema)
+  schemaRef.current = schema
+
   const { register, handleSubmit, reset, setValue, watch, control, formState: { errors } } = useForm<ClienteForm>({
-    resolver: zodResolver(clienteSchema) as unknown as Resolver<ClienteForm>,
+    resolver: (values, context, options) =>
+      (zodResolver(schemaRef.current) as unknown as Resolver<ClienteForm>)(values, context, options),
     defaultValues: { status: 'ativo' },
   })
 
@@ -265,7 +311,7 @@ export default function ClientesPage() {
           <DialogHeader>
             <DialogTitle>{editingCliente ? 'Editar Cliente' : 'Novo Cliente'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit, () => toast.error('Verifique os campos obrigatórios (CPF/CNPJ, endereço, etc.).'))} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit, () => toast.error('Verifique os campos obrigatórios.'))} className="space-y-4">
             {/* Nome */}
             <div className="space-y-1">
               <Label>Nome completo *</Label>
@@ -280,7 +326,7 @@ export default function ClientesPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* CPF/CNPJ */}
               <div className="space-y-1">
-                <Label>CPF / CNPJ *</Label>
+                <Label>CPF / CNPJ{req.cpfCnpj ? ' *' : ''}</Label>
                 <Input
                   placeholder="000.000.000-00"
                   {...register('cpfCnpj')}
@@ -292,7 +338,7 @@ export default function ClientesPage() {
 
               {/* Telefone */}
               <div className="space-y-1">
-                <Label>Telefone (WhatsApp) *</Label>
+                <Label>Telefone (WhatsApp){req.telefone ? ' *' : ''}</Label>
                 <Input
                   placeholder="(11) 99999-9999"
                   {...register('telefone')}
@@ -304,7 +350,7 @@ export default function ClientesPage() {
 
               {/* Cidade */}
               <div className="space-y-1">
-                <Label>Cidade *</Label>
+                <Label>Cidade{req.cidade ? ' *' : ''}</Label>
                 <Input
                   placeholder="São Paulo"
                   {...register('cidade')}
@@ -335,7 +381,7 @@ export default function ClientesPage() {
 
             {/* Endereço */}
             <div className="space-y-1">
-              <Label>Endereço completo *</Label>
+              <Label>Endereço completo{req.endereco ? ' *' : ''}</Label>
               <Input placeholder="Rua das Flores, 123 - Bairro" {...register('endereco')} />
               {errors.endereco && <p className="text-xs text-destructive">{errors.endereco.message}</p>}
             </div>
