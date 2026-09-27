@@ -33,5 +33,7 @@ export function useAppConfig() {
     tamanhos: (data?.tamanhos && data.tamanhos.length ? data.tamanhos : ['PP', 'P', 'M', 'G', 'GG', 'XGG']) as string[],
     meiosPagamento: { ...DEFAULT_MEIOS, ...(data?.meiosPagamento ?? {}) },
     camposObrigatoriosCliente: { ...DEFAULT_CAMPOS_OBRIGATORIOS_CLIENTE, ...(data?.camposObrigatoriosCliente ?? {}) },
+    slug: data?.slug ?? '',
+    catalogoAtivo: data?.catalogoAtivo === true,
   }
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchPedidos, fetchClientes, executarVenda, insertClienteRetornando, marcarPedidoFinalizado, cancelarPedido } from '@/lib/database'
 import type { Pedido, PedidoStatus, Cliente, FormaPagamento, ItemVenda } from '@/types'
@@ -17,7 +17,7 @@ import { Combobox } from '@/components/shared/combobox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { ClipboardList, MoreVertical, MessageCircle, CheckCircle2, XCircle, Loader2, Package } from 'lucide-react'
+import { ClipboardList, MoreVertical, MessageCircle, CheckCircle2, XCircle, Loader2, Package, Share2, Copy, Check, Store } from 'lucide-react'
 import { toast } from 'sonner'
 
 const FP_OPTIONS: { value: FormaPagamento; label: string }[] = [
@@ -35,7 +35,12 @@ const statusConfig: Record<PedidoStatus, { label: string; variant: 'default' | '
 
 export default function PedidosPage() {
   const qc = useQueryClient()
-  const { meiosPagamento } = useAppConfig()
+  const { meiosPagamento, slug, catalogoAtivo, nomeApp } = useAppConfig()
+  const [origin, setOrigin] = useState('')
+  const [copiado, setCopiado] = useState(false)
+  useEffect(() => { setOrigin(window.location.origin) }, [])
+  const linkCatalogo = origin && slug ? `${origin}/loja/${slug}` : ''
+
   const [statusFilter, setStatusFilter] = useState<'novos' | 'todos'>('novos')
   const [finalizando, setFinalizando] = useState<Pedido | null>(null)
   const [cancelando, setCancelando] = useState<Pedido | null>(null)
@@ -148,8 +153,54 @@ export default function PedidosPage() {
     }
   }
 
+  async function copiarLink() {
+    if (!linkCatalogo) return
+    await navigator.clipboard.writeText(linkCatalogo)
+    setCopiado(true); toast.success('Link copiado!'); setTimeout(() => setCopiado(false), 2000)
+  }
+
+  async function compartilharWhatsApp() {
+    if (!linkCatalogo) return
+    const msg = `🛍️ Confira o catálogo da ${nomeApp} e faça seu pedido:\n${linkCatalogo}`
+    // Web Share API (nativo do celular) quando disponível; senão, abre o WhatsApp
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try { await navigator.share({ title: nomeApp, text: msg, url: linkCatalogo }); return } catch { /* cancelado */ }
+    }
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+  }
+
   return (
     <div className="space-y-4">
+      {/* Compartilhar o catálogo */}
+      {catalogoAtivo && linkCatalogo ? (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="py-3 px-4 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              <Store className="h-5 w-5 text-primary shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Seu catálogo online</p>
+                <code className="text-xs text-muted-foreground break-all">{linkCatalogo}</code>
+              </div>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={compartilharWhatsApp}>
+                <Share2 className="h-4 w-4 mr-1.5" />Compartilhar
+              </Button>
+              <Button size="sm" variant="outline" onClick={copiarLink}>
+                {copiado ? <Check className="h-4 w-4 mr-1.5" /> : <Copy className="h-4 w-4 mr-1.5" />}{copiado ? 'Copiado' : 'Copiar'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="border-dashed">
+          <CardContent className="py-3 px-4 text-sm text-muted-foreground flex items-center gap-2">
+            <Store className="h-4 w-4 shrink-0" />
+            Ative seu catálogo online em <strong>Configurações → Loja Online</strong> para receber pedidos e compartilhar o link.
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2"><ClipboardList className="h-5 w-5" />Pedidos</h1>

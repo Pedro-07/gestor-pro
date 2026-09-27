@@ -12,7 +12,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Separator } from '@/components/ui/separator'
 import { ShoppingCart, ShoppingBag, Package, Search, Plus, Minus, Trash2, Store, CheckCircle2, Loader2, ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
@@ -47,6 +46,8 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
 
   const [search, setSearch] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
+  const [detalhe, setDetalhe] = useState<CatalogoProduto | null>(null)
+  const [tamSel, setTamSel] = useState('')
   const [cartOpen, setCartOpen] = useState(false)
   const [checkoutOpen, setCheckoutOpen] = useState(false)
   const [etapa, setEtapa] = useState<Etapa>('cadastro')
@@ -252,40 +253,26 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
             {filtered.map((p) => {
               const tamsComEstoque = Object.entries(p.estoque ?? {}).filter(([, q]) => q > 0).map(([t]) => t)
               return (
-                <div key={p.id} className="rounded-xl border bg-card overflow-hidden flex flex-col">
+                <button key={p.id} type="button" onClick={() => { setDetalhe(p); setTamSel('') }}
+                  className="text-left rounded-xl border bg-card overflow-hidden flex flex-col group focus:outline-none focus:ring-2 focus:ring-ring">
                   <div className="aspect-square bg-muted relative">
                     {p.fotoUrl
-                      ? <Image src={p.fotoUrl} alt={p.nome} fill className="object-cover" sizes="(max-width: 640px) 50vw, 320px" />
+                      ? <Image src={p.fotoUrl} alt={p.nome} fill className="object-cover transition-transform group-hover:scale-105" sizes="(max-width: 640px) 50vw, 320px" />
                       : <div className="w-full h-full flex items-center justify-center"><Package className="h-10 w-10 text-muted-foreground/30" /></div>}
-                  </div>
-                  <div className="p-2.5 flex flex-col gap-1.5 flex-1">
-                    <p className="text-sm font-medium leading-tight line-clamp-2">{p.nome}</p>
-                    {p.descricao && <p className="text-[11px] text-muted-foreground line-clamp-2">{p.descricao}</p>}
-                    <span className="text-base font-bold text-green-600 dark:text-green-400 mt-auto">{formatCurrency(p.precoVenda)}</span>
-                    {usarTamanhos && tamsComEstoque.length > 1 ? (
-                      <Popover>
-                        <PopoverTrigger className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium py-2 hover:bg-primary/90 transition-colors">
-                          <ShoppingCart className="h-4 w-4" />Adicionar
-                        </PopoverTrigger>
-                        <PopoverContent align="center" className="w-auto p-2">
-                          <p className="text-[10px] text-muted-foreground mb-1.5 px-0.5">Escolha o tamanho</p>
-                          <div className="flex flex-wrap gap-1 max-w-[200px]">
-                            {tamsComEstoque.map((t) => (
-                              <button key={t} onClick={() => addToCart(p, t)}
-                                className="text-xs px-2.5 py-1.5 rounded border border-primary text-primary font-semibold hover:bg-primary hover:text-primary-foreground active:scale-95 transition-colors">
-                                {t}<span className="ml-0.5 font-normal opacity-70">({p.estoque[t]})</span>
-                              </button>
-                            ))}
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-                    ) : (
-                      <Button size="sm" className="w-full" onClick={() => addToCart(p, usarTamanhos ? (tamsComEstoque[0] ?? 'M') : 'M')}>
-                        <ShoppingCart className="h-4 w-4 mr-1.5" />Adicionar
-                      </Button>
+                    <span className="absolute bottom-2 right-2 h-9 w-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-md">
+                      <ShoppingCart className="h-4 w-4" />
+                    </span>
+                    {usarTamanhos && tamsComEstoque.length > 0 && (
+                      <span className="absolute top-2 left-2 rounded-md bg-black/55 text-white text-[10px] font-medium px-1.5 py-0.5 backdrop-blur-sm">
+                        {tamsComEstoque.slice(0, 4).join(' · ')}{tamsComEstoque.length > 4 ? '…' : ''}
+                      </span>
                     )}
                   </div>
-                </div>
+                  <div className="p-2.5 flex flex-col gap-1 flex-1">
+                    <p className="text-sm font-medium leading-tight line-clamp-2">{p.nome}</p>
+                    <span className="text-base font-bold text-green-600 dark:text-green-400 mt-auto">{formatCurrency(p.precoVenda)}</span>
+                  </div>
+                </button>
               )
             })}
           </div>
@@ -303,6 +290,57 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
           </div>
         </div>
       )}
+
+      {/* Modal de detalhe do produto */}
+      <Dialog open={!!detalhe} onOpenChange={(o) => { if (!o) { setDetalhe(null); setTamSel('') } }}>
+        <DialogContent className="max-w-md p-0 gap-0 overflow-hidden">
+          {detalhe && (() => {
+            const tams = Object.entries(detalhe.estoque ?? {}).filter(([, q]) => q > 0).map(([t]) => t)
+            const total = Object.values(detalhe.estoque ?? {}).reduce((a, b) => a + b, 0)
+            const precisaTam = usarTamanhos && tams.length > 0
+            const podeAdd = total > 0 && (!precisaTam || !!tamSel)
+            return (
+              <div className="max-h-[90vh] overflow-y-auto">
+                {/* Imagem grande com gradiente */}
+                <div className="relative aspect-square bg-muted">
+                  {detalhe.fotoUrl
+                    ? <Image src={detalhe.fotoUrl} alt={detalhe.nome} fill className="object-cover" sizes="(max-width: 640px) 100vw, 448px" />
+                    : <div className="w-full h-full flex items-center justify-center"><Package className="h-16 w-16 text-muted-foreground/30" /></div>}
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent p-4 pt-12">
+                    <h2 className="text-white text-lg font-bold leading-tight drop-shadow">{detalhe.nome}</h2>
+                    <p className="text-white text-2xl font-extrabold drop-shadow">{formatCurrency(detalhe.precoVenda)}</p>
+                  </div>
+                </div>
+
+                {/* Corpo */}
+                <div className="p-4 space-y-4">
+                  {detalhe.descricao && <p className="text-sm text-muted-foreground whitespace-pre-line">{detalhe.descricao}</p>}
+
+                  {precisaTam && (
+                    <div>
+                      <p className="text-xs font-medium mb-2">Escolha o tamanho</p>
+                      <div className="flex flex-wrap gap-2">
+                        {tams.map((t) => (
+                          <button key={t} type="button" onClick={() => setTamSel(t)}
+                            className={`text-sm px-3 py-1.5 rounded-lg border font-semibold transition-colors ${tamSel === t ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
+                            {t}<span className="ml-1 font-normal opacity-70">({detalhe.estoque[t]})</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <Button className="w-full" size="lg" disabled={!podeAdd}
+                    onClick={() => { addToCart(detalhe, precisaTam ? tamSel : 'M'); setDetalhe(null); setTamSel('') }}>
+                    <ShoppingCart className="h-5 w-5 mr-2" />
+                    {precisaTam && !tamSel ? 'Selecione um tamanho' : 'Adicionar ao carrinho'}
+                  </Button>
+                </div>
+              </div>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog do carrinho */}
       <Dialog open={cartOpen} onOpenChange={setCartOpen}>
