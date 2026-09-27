@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchConsignacoes, fetchAcertosByConsignacao, registrarAcerto } from '@/lib/database'
+import { useAppConfig } from '@/hooks/useAppConfig'
 import type { Consignacao, FormaPagamentoRecebimento } from '@/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -30,6 +32,9 @@ const itemKey = (produtoId: string, tamanho: string) => `${produtoId}__${tamanho
 
 export default function ConsignacoesPage() {
   const qc = useQueryClient()
+  const router = useRouter()
+  const { meiosPagamento } = useAppConfig()
+  const usarConsignado = meiosPagamento.consignado?.ativo !== false
   const [filtro, setFiltro] = useState<'abertas' | 'todas'>('abertas')
   const [acertoConsig, setAcertoConsig] = useState<Consignacao | null>(null)
   const [mov, setMov] = useState<MovState>({})
@@ -111,6 +116,13 @@ export default function ConsignacoesPage() {
       setSaving(false)
     }
   }
+
+  // Consignado desativado nas configurações: a página não deve ser acessível.
+  useEffect(() => {
+    if (!usarConsignado) router.replace('/dashboard')
+  }, [usarConsignado, router])
+
+  if (!usarConsignado) return null
 
   return (
     <div className="space-y-4">
