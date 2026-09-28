@@ -301,12 +301,12 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
             const podeAdd = total > 0 && (!precisaTam || !!tamSel)
             return (
               <div className="max-h-[90dvh] overflow-y-auto">
-                {/* Imagem grande com gradiente */}
-                <div className="relative aspect-square bg-muted">
+                {/* Imagem completa (contain) sobre fundo escuro — sem cortar */}
+                <div className="relative aspect-square bg-neutral-900">
                   {detalhe.fotoUrl
-                    ? <Image src={detalhe.fotoUrl} alt={detalhe.nome} fill className="object-cover" sizes="(max-width: 640px) 100vw, 448px" />
-                    : <div className="w-full h-full flex items-center justify-center"><Package className="h-16 w-16 text-muted-foreground/30" /></div>}
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent p-4 pt-12">
+                    ? <Image src={detalhe.fotoUrl} alt={detalhe.nome} fill className="object-contain" sizes="(max-width: 640px) 100vw, 448px" />
+                    : <div className="w-full h-full flex items-center justify-center"><Package className="h-16 w-16 text-white/20" /></div>}
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent p-4 pt-12 pointer-events-none">
                     <h2 className="text-white text-lg font-bold leading-tight drop-shadow">{detalhe.nome}</h2>
                     <p className="text-white text-2xl font-extrabold drop-shadow">{formatCurrency(detalhe.precoVenda)}</p>
                   </div>
