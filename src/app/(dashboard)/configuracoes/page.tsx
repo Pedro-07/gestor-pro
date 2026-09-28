@@ -16,6 +16,7 @@ import { toast } from 'sonner'
 import { Loader2, Save, UploadCloud, Store, Package, Users, ShoppingCart, Globe, Copy, Check, ExternalLink } from 'lucide-react'
 import Image from 'next/image'
 import { slugify } from '@/lib/utils'
+import { compressImage } from '@/lib/image'
 
 const DEFAULT_MEIOS = {
   dinheiro: { ativo: true, regra: false, valor: 0 },
@@ -87,9 +88,9 @@ export default function ConfiguracoesPage() {
       let finalLogoUrl = config?.logoUrl
 
       if (logoFile) {
-        const ext = logoFile.name.split('.').pop()
+        const { blob, ext, type } = await compressImage(logoFile, { maxDim: 512, quality: 0.85 })
         const path = `logos/logo_${Date.now()}.${ext}`
-        finalLogoUrl = await uploadFile(path, logoFile)
+        finalLogoUrl = await uploadFile(path, blob, type)
       }
 
       // slug vazio → null (evita conflito de unicidade entre lojas sem catálogo)

@@ -7,6 +7,7 @@ import type { Produto, CategoriaProduto, Fornecedor, Tamanho } from '@/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useForm, Controller, type Resolver } from 'react-hook-form'
 import { useAppConfig } from '@/hooks/useAppConfig'
+import { compressImage } from '@/lib/image'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { optionalText } from '@/lib/schema'
@@ -137,9 +138,9 @@ export default function EstoquePage() {
       let finalFotoUrl = editingProduto?.fotoUrl
 
       if (fotoFile) {
-        const ext = fotoFile.name.split('.').pop()
+        const { blob, ext, type } = await compressImage(fotoFile, { maxDim: 1200, quality: 0.8 })
         const path = `produtos/${Date.now()}.${ext}`
-        finalFotoUrl = await uploadFile(path, fotoFile)
+        finalFotoUrl = await uploadFile(path, blob, type)
       }
 
       const f = fornecedores.find((x) => x.id === selectedFornecedorId)

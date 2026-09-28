@@ -516,8 +516,8 @@ export async function fetchRelatoriosData() {
 
 // ─── STORAGE ─────────────────────────────────────────────────────────────────
 
-export async function uploadFile(path: string, file: File): Promise<string> {
-  const { error } = await supabase.storage.from('fotos').upload(path, file, { upsert: true })
+export async function uploadFile(path: string, file: Blob, contentType?: string): Promise<string> {
+  const { error } = await supabase.storage.from('fotos').upload(path, file, { upsert: true, contentType })
   if (error) throw error
   const { data } = supabase.storage.from('fotos').getPublicUrl(path)
   return data.publicUrl
