@@ -293,7 +293,7 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
 
       {/* Modal de detalhe do produto */}
       <Dialog open={!!detalhe} onOpenChange={(o) => { if (!o) { setDetalhe(null); setTamSel('') } }}>
-        <DialogContent className="max-w-md p-0 gap-0 overflow-hidden">
+        <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden">
           {detalhe && (() => {
             const tams = Object.entries(detalhe.estoque ?? {}).filter(([, q]) => q > 0).map(([t]) => t)
             const total = Object.values(detalhe.estoque ?? {}).reduce((a, b) => a + b, 0)
@@ -344,7 +344,7 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
 
       {/* Dialog do carrinho */}
       <Dialog open={cartOpen} onOpenChange={setCartOpen}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><ShoppingCart className="h-5 w-5" />Seu carrinho</DialogTitle></DialogHeader>
           {cart.length === 0 ? (
             <div className="text-center py-10 text-muted-foreground"><Package className="h-10 w-10 mx-auto mb-2 opacity-30" /><p className="text-sm">Carrinho vazio</p></div>
@@ -380,7 +380,7 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
 
       {/* Dialog de checkout: cadastro + sucesso */}
       <Dialog open={checkoutOpen} onOpenChange={(o) => { setCheckoutOpen(o); if (!o) setEtapa('cadastro') }}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           {etapa === 'cadastro' ? (
             <>
               <DialogHeader><DialogTitle>Seus dados</DialogTitle></DialogHeader>

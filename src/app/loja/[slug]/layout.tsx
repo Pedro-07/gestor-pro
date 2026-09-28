@@ -23,8 +23,9 @@ export async function generateMetadata({ params }: { params: { slug: string } })
 
   const titulo = `${loja.nomeApp} — Catálogo online`
   const descricao = `Confira os produtos da ${loja.nomeApp} e faça seu pedido online.`
-  const imagens = loja.logoUrl ? [{ url: loja.logoUrl, alt: loja.nomeApp }] : undefined
 
+  // A imagem grande (1200x630) vem de opengraph-image.tsx (convenção do Next),
+  // que o framework injeta automaticamente em og:image e twitter:image.
   return {
     metadataBase: base ? new URL(base) : undefined,
     title: titulo,
@@ -36,13 +37,11 @@ export async function generateMetadata({ params }: { params: { slug: string } })
       siteName: loja.nomeApp,
       type: 'website',
       locale: 'pt_BR',
-      images: imagens,
     },
     twitter: {
-      card: loja.logoUrl ? 'summary_large_image' : 'summary',
+      card: 'summary_large_image',
       title: titulo,
       description: descricao,
-      images: loja.logoUrl ? [loja.logoUrl] : undefined,
     },
   }
 }

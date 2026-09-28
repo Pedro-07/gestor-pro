@@ -292,7 +292,7 @@ export default function PedidosPage() {
 
       {/* Dialog de finalização */}
       <Dialog open={!!finalizando} onOpenChange={(o) => { if (!o) setFinalizando(null) }}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Finalizar pedido</DialogTitle></DialogHeader>
           {finalizando && (
             <div className="space-y-4">
