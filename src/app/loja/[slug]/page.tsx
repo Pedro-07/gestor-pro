@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import Image from 'next/image'
 import { fetchCatalogoLoja, fetchCatalogoProdutos, criarPedidoPublico } from '@/lib/database'
@@ -29,6 +29,28 @@ interface CartItem {
 
 type Etapa = 'cadastro' | 'sucesso'
 
+// Foto robusta para o catálogo público:
+// - `eager` desativa o lazy-loading nativo (Safari/webview do WhatsApp trava
+//   imagens lazy inseridas dinamicamente — só carregavam após um toque).
+// - Se a versão otimizada (/_next/image) falhar, cai para a URL original.
+function FotoProduto({ src, alt, sizes, className, eager = false }: {
+  src: string
+  alt: string
+  sizes: string
+  className?: string
+  eager?: boolean
+}) {
+  const [semOtimizar, setSemOtimizar] = useState(false)
+  return (
+    <Image
+      src={src} alt={alt} fill sizes={sizes} className={className}
+      priority={eager} loading={eager ? 'eager' : undefined}
+      unoptimized={semOtimizar}
+      onError={() => setSemOtimizar(true)}
+    />
+  )
+}
+
 export default function CatalogoPage({ params }: { params: { slug: string } }) {
   const slug = params.slug
 
@@ -45,7 +67,9 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
   })
 
   const [search, setSearch] = useState('')
+  const [categoria, setCategoria] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
+  const [cartCarregado, setCartCarregado] = useState(false)
   const [detalhe, setDetalhe] = useState<CatalogoProduto | null>(null)
   const [tamSel, setTamSel] = useState('')
   const [cartOpen, setCartOpen] = useState(false)
@@ -64,17 +88,49 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
   // Resultado do pedido (para o resumo/WhatsApp)
   const [resumo, setResumo] = useState<{ itens: PedidoItem[]; total: number; pedidoId: string } | null>(null)
 
+  // Carrinho persistente por loja: o webview do WhatsApp descarta a aba com
+  // frequência — sem isso o cliente perde o carrinho ao voltar e desiste.
+  const cartKey = `catalogo-cart-${slug}`
+  useEffect(() => {
+    try {
+      const salvo = localStorage.getItem(cartKey)
+      if (salvo) {
+        const itens = JSON.parse(salvo) as CartItem[]
+        if (Array.isArray(itens) && itens.every((i) => i.produtoId && i.quantidade > 0)) setCart(itens)
+      }
+    } catch { /* storage indisponível ou corrompido — segue com carrinho vazio */ }
+    setCartCarregado(true)
+  }, [cartKey])
+  useEffect(() => {
+    if (!cartCarregado) return
+    try {
+      if (cart.length > 0) localStorage.setItem(cartKey, JSON.stringify(cart))
+      else localStorage.removeItem(cartKey)
+    } catch { /* quota/privado — sem persistência, sem quebrar */ }
+  }, [cart, cartKey, cartCarregado])
+
   const usarTamanhos = loja?.usarTamanhos !== false
   const cartTotal = cart.reduce((s, i) => s + i.subtotal, 0)
   const cartCount = cart.reduce((s, i) => s + i.quantidade, 0)
 
-  const filtered = useMemo(() => produtos.filter((p) => {
-    const total = Object.values(p.estoque ?? {}).reduce((a, b) => a + b, 0)
-    if (total <= 0) return false
-    if (!search.trim()) return true
-    const q = search.toLowerCase()
-    return p.nome.toLowerCase().includes(q) || (p.codigo ?? '').toLowerCase().includes(q)
-  }), [produtos, search])
+  const estoqueTotal = (p: CatalogoProduto) => Object.values(p.estoque ?? {}).reduce((a, b) => a + b, 0)
+
+  const categorias = useMemo(
+    () => Array.from(new Set(produtos.map((p) => p.categoria).filter(Boolean))).sort(),
+    [produtos],
+  )
+
+  // Esgotados ficam visíveis (no fim da lista, com selo) — catálogo que
+  // encolhe parece loja vazia e o cliente não pode nem perguntar pela peça.
+  const filtered = useMemo(() => produtos
+    .filter((p) => {
+      if (categoria && p.categoria !== categoria) return false
+      if (!search.trim()) return true
+      const q = search.toLowerCase()
+      return p.nome.toLowerCase().includes(q) || (p.codigo ?? '').toLowerCase().includes(q)
+    })
+    .sort((a, b) => Number(estoqueTotal(a) <= 0) - Number(estoqueTotal(b) <= 0)),
+  [produtos, search, categoria])
 
   function addToCart(produto: CatalogoProduto, tamanho: Tamanho) {
     const tam: Tamanho = usarTamanhos ? tamanho : 'M'
@@ -218,7 +274,7 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
         <div className="max-w-2xl mx-auto px-4 h-16 flex items-center gap-3">
           <div className="h-10 w-10 rounded-lg bg-primary/10 border flex items-center justify-center overflow-hidden shrink-0">
             {loja.logoUrl
-              ? <Image src={loja.logoUrl} alt={loja.nomeApp} width={40} height={40} className="object-cover w-full h-full" />
+              ? <Image src={loja.logoUrl} alt={loja.nomeApp} width={40} height={40} priority className="object-cover w-full h-full" />
               : <ShoppingBag className="h-5 w-5 text-primary" />}
           </div>
           <div className="min-w-0 flex-1">
@@ -241,6 +297,18 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
           <Input placeholder="Buscar produto..." className="pl-9 bg-card" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
 
+        {/* Filtro por categoria */}
+        {categorias.length > 1 && (
+          <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 scrollbar-none">
+            {['', ...categorias].map((c) => (
+              <button key={c || 'todos'} type="button" onClick={() => setCategoria(c)}
+                className={`shrink-0 text-sm px-3 py-1.5 rounded-full border font-medium transition-colors ${categoria === c ? 'bg-primary text-primary-foreground border-primary' : 'bg-card border-border hover:bg-muted'}`}>
+                {c ? c.charAt(0).toUpperCase() + c.slice(1) : 'Todos'}
+              </button>
+            ))}
+          </div>
+        )}
+
         {loadingProdutos ? (
           <div className="grid grid-cols-2 gap-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-52 rounded-xl" />)}</div>
         ) : filtered.length === 0 ? (
@@ -250,18 +318,23 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3">
-            {filtered.map((p) => {
+            {filtered.map((p, idx) => {
               const tamsComEstoque = Object.entries(p.estoque ?? {}).filter(([, q]) => q > 0).map(([t]) => t)
+              const esgotado = estoqueTotal(p) <= 0
               return (
                 <button key={p.id} type="button" onClick={() => { setDetalhe(p); setTamSel('') }}
                   className="text-left rounded-xl border bg-card overflow-hidden flex flex-col group focus:outline-none focus:ring-2 focus:ring-ring">
                   <div className="aspect-square bg-muted relative">
                     {p.fotoUrl
-                      ? <Image src={p.fotoUrl} alt={p.nome} fill className="object-cover transition-transform group-hover:scale-105" sizes="(max-width: 640px) 50vw, 320px" />
+                      ? <FotoProduto src={p.fotoUrl} alt={p.nome} eager={idx < 6} className={`object-cover transition-transform group-hover:scale-105 ${esgotado ? 'grayscale opacity-60' : ''}`} sizes="(max-width: 640px) 50vw, 320px" />
                       : <div className="w-full h-full flex items-center justify-center"><Package className="h-10 w-10 text-muted-foreground/30" /></div>}
-                    <span className="absolute bottom-2 right-2 h-9 w-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-md">
-                      <ShoppingCart className="h-4 w-4" />
-                    </span>
+                    {esgotado ? (
+                      <span className="absolute bottom-2 left-2 rounded-md bg-black/70 text-white text-[11px] font-semibold px-2 py-1 backdrop-blur-sm">Esgotado</span>
+                    ) : (
+                      <span className="absolute bottom-2 right-2 h-9 w-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-md">
+                        <ShoppingCart className="h-4 w-4" />
+                      </span>
+                    )}
                     {usarTamanhos && tamsComEstoque.length > 0 && (
                       <span className="absolute top-2 left-2 rounded-md bg-black/55 text-white text-[10px] font-medium px-1.5 py-0.5 backdrop-blur-sm">
                         {tamsComEstoque.slice(0, 4).join(' · ')}{tamsComEstoque.length > 4 ? '…' : ''}
@@ -304,7 +377,7 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
                 {/* Imagem completa (contain) sobre fundo escuro — sem cortar */}
                 <div className="relative aspect-square bg-neutral-900">
                   {detalhe.fotoUrl
-                    ? <Image src={detalhe.fotoUrl} alt={detalhe.nome} fill className="object-contain" sizes="(max-width: 640px) 100vw, 448px" />
+                    ? <FotoProduto src={detalhe.fotoUrl} alt={detalhe.nome} eager className="object-contain" sizes="(max-width: 640px) 100vw, 448px" />
                     : <div className="w-full h-full flex items-center justify-center"><Package className="h-16 w-16 text-white/20" /></div>}
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent p-4 pt-12 pointer-events-none">
                     <h2 className="text-white text-lg font-bold leading-tight drop-shadow">{detalhe.nome}</h2>
@@ -333,7 +406,7 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
                   <Button className="w-full" size="lg" disabled={!podeAdd}
                     onClick={() => { addToCart(detalhe, precisaTam ? tamSel : 'M'); setDetalhe(null); setTamSel('') }}>
                     <ShoppingCart className="h-5 w-5 mr-2" />
-                    {precisaTam && !tamSel ? 'Selecione um tamanho' : 'Adicionar ao carrinho'}
+                    {total <= 0 ? 'Esgotado' : precisaTam && !tamSel ? 'Selecione um tamanho' : 'Adicionar ao carrinho'}
                   </Button>
                 </div>
               </div>
