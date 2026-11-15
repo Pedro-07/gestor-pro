@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import type { ParcelaPromissoria } from './utils'
 import type {
   Cliente, Produto, Venda, Parcela, Fornecedor,
   Configuracoes, FormaPagamento, ItemVenda, Tamanho,
@@ -323,35 +324,29 @@ export async function fetchParcelasByCliente(clienteId: string): Promise<Parcela
 
 export async function registrarPagamento(
   parcelaId: string,
-  parcela: Parcela,
   pagamento: { valor: number; dataPagamento: string; formaPagamento: FormaPagamento; observacoes?: string }
 ) {
-  const novoValorPago = parcela.valorPago + pagamento.valor
-  const saldo = parcela.valor - novoValorPago
-  const novoStatus = saldo <= 0 ? 'paga' : 'parcialmente_paga'
-
-  const novoPagamento = {
-    id: Date.now().toString(),
-    valor: pagamento.valor,
-    dataPagamento: new Date(pagamento.dataPagamento + 'T12:00:00').toISOString(),
-    formaPagamento: pagamento.formaPagamento,
-    observacoes: pagamento.observacoes ?? '',
-  }
-
-  const { error } = await supabase.from('parcelas').update({
-    valorPago: novoValorPago,
-    status: novoStatus,
-    pagamentos: [...(parcela.pagamentos ?? []), novoPagamento],
-  }).eq('id', parcelaId)
-  if (error) throw error
+  // Transacional (RPC registrar_pagamento): trava a parcela (FOR UPDATE) e
+  // calcula saldo/status/histórico a partir do estado ATUAL do banco — nunca
+  // do cache do navegador (evita sobrescrever um pagamento concorrente).
+  const { error } = await supabase.rpc('registrar_pagamento', {
+    p_parcela_id: parcelaId,
+    p_valor: pagamento.valor,
+    p_data_pagamento: new Date(pagamento.dataPagamento + 'T12:00:00').toISOString(),
+    p_forma_pagamento: pagamento.formaPagamento,
+    p_observacoes: pagamento.observacoes ?? '',
+  })
+  if (error) throw new Error(error.message)
 }
 
 export async function atualizarParcelasVencidas(parcelas: Parcela[]) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
+  // 'parcialmente_paga' também vence: sem isso, uma parcela com pagamento
+  // parcial atrasada continuaria aparecendo como em dia.
   const vencidas = parcelas.filter((p) => {
-    if (p.status !== 'pendente') return false
+    if (p.status !== 'pendente' && p.status !== 'parcialmente_paga') return false
     const dueDate = new Date(p.dataVencimento)
     return dueDate < today
   })
@@ -425,20 +420,46 @@ export async function fetchPedidosNovosCount(): Promise<number> {
 }
 
 export async function cancelarPedido(id: string) {
-  const { error } = await supabase
+  // Só cancela se ainda estiver 'novo' — um pedido já finalizado tem venda
+  // e estoque baixado; cancelá-lo por aqui deixaria os dados inconsistentes.
+  const { data, error } = await supabase
     .from('pedidos')
     .update({ status: 'cancelado', updatedAt: new Date().toISOString() })
     .eq('id', id)
+    .eq('status', 'novo')
+    .select('id')
   if (error) throw error
+  if (!data?.length) throw new Error('Este pedido já foi finalizado ou cancelado — recarregue a página')
 }
 
-/** Marca o pedido como finalizado e o vincula à venda gerada. */
-export async function marcarPedidoFinalizado(id: string, vendaId: string) {
-  const { error } = await supabase
-    .from('pedidos')
-    .update({ status: 'finalizado', vendaId, updatedAt: new Date().toISOString() })
-    .eq('id', id)
-  if (error) throw error
+/**
+ * Finaliza um pedido gerando a venda numa ÚNICA transação (RPC finalizar_pedido):
+ * trava o pedido (FOR UPDATE), valida que ainda está 'novo' (impede dupla
+ * finalização), executa a venda com os itens gravados no banco e vincula a
+ * venda ao pedido. Retorna o id da venda criada.
+ */
+export async function finalizarPedidoVenda(params: {
+  pedidoId: string
+  clienteId: string
+  clienteNome: string
+  clienteCidade: string
+  formaPagamento: FormaPagamento
+  entrada?: number
+  numeroParcelas?: number
+  parcelas?: ParcelaPromissoria[]
+}): Promise<string> {
+  const { data, error } = await supabase.rpc('finalizar_pedido', {
+    p_pedido_id: params.pedidoId,
+    p_cliente_id: params.clienteId,
+    p_cliente_nome: params.clienteNome,
+    p_cliente_cidade: params.clienteCidade,
+    p_forma_pagamento: params.formaPagamento,
+    p_entrada: params.entrada ?? 0,
+    p_numero_parcelas: params.numeroParcelas ?? 1,
+    p_parcelas: params.parcelas ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as string
 }
 
 /** Insere um cliente e retorna o registro criado (usado ao finalizar um pedido). */

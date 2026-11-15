@@ -25,6 +25,7 @@ import { useSidebarStore } from '@/store/sidebar-store'
 import { useAppConfig } from '@/hooks/useAppConfig'
 import { useQuery } from '@tanstack/react-query'
 import { fetchPedidosNovosCount } from '@/lib/database'
+import { usePedidosRealtime } from '@/hooks/usePedidosRealtime'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -40,6 +41,7 @@ const navItems = [
 ]
 
 function usePedidosNovos() {
+  usePedidosRealtime() // pedido novo → toast + atualiza o badge na hora
   const { data } = useQuery({ queryKey: ['pedidos-novos-count'], queryFn: fetchPedidosNovosCount, staleTime: 60_000 })
   return data ?? 0
 }

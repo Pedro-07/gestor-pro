@@ -3,9 +3,9 @@
 import { useState, useRef, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchProdutosByNome, fetchClientes, executarVenda, criarConsignacao } from '@/lib/database'
-import type { Produto, Cliente, Tamanho, FormaPagamento, ItemVenda } from '@/types'
+import type { Produto, Tamanho, FormaPagamento, ItemVenda } from '@/types'
 import { useAppConfig } from '@/hooks/useAppConfig'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, gerarParcelasPromissoria } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -190,36 +190,13 @@ export default function PDVPage() {
         return
       }
 
-      // Montar parcelas se promissória
-      let parcelas: Array<{
-        clienteNome: string; clienteTelefone: string; numero: number; totalParcelas: number;
-        valor: number; valorPago: number; dataVencimento: string; status: string; pagamentos: unknown[]
-      }> | undefined
-
-      if (formaPagamento === 'promissoria') {
-        parcelas = []
-        const valorRestante = totalComDesconto - entrada
-        const valorParcela = Math.round((valorRestante / numeroParcelas) * 100) / 100
-        const now = new Date()
-
-        if (entrada > 0) {
-          parcelas.push({
+      // Montar parcelas se promissória (última absorve o arredondamento)
+      const parcelas = formaPagamento === 'promissoria'
+        ? gerarParcelasPromissoria({
             clienteNome: cliente.nome, clienteTelefone: cliente.telefone ?? '',
-            numero: 0, totalParcelas: numeroParcelas, valor: entrada,
-            valorPago: 0, dataVencimento: now.toISOString(), status: 'pendente', pagamentos: [],
+            total: totalComDesconto, entrada, numeroParcelas,
           })
-        }
-
-        for (let i = 1; i <= numeroParcelas; i++) {
-          const dueDate = new Date(now)
-          dueDate.setMonth(dueDate.getMonth() + i)
-          parcelas.push({
-            clienteNome: cliente.nome, clienteTelefone: cliente.telefone ?? '',
-            numero: i, totalParcelas: numeroParcelas, valor: valorParcela,
-            valorPago: 0, dataVencimento: dueDate.toISOString(), status: 'pendente', pagamentos: [],
-          })
-        }
-      }
+        : undefined
 
       await executarVenda({
         clienteId, clienteNome: cliente.nome, clienteCidade: cliente.cidade,

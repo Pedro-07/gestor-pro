@@ -80,27 +80,57 @@ export function slugify(value: string): string {
     .slice(0, 40)
 }
 
-export function generateInstallments(
-  total: number,
-  count: number,
-  firstDueDate: Date,
-  downPayment = 0,
-  intervalDays = 30
-): Array<{ number: number; value: number; dueDate: Date }> {
-  const remaining = total - downPayment
-  const installmentValue = parseFloat((remaining / count).toFixed(2))
-  const installments = []
+export interface ParcelaPromissoria {
+  clienteNome: string
+  clienteTelefone: string
+  numero: number
+  totalParcelas: number
+  valor: number
+  valorPago: number
+  dataVencimento: string
+  status: string
+  pagamentos: unknown[]
+}
 
-  for (let i = 0; i < count; i++) {
-    const dueDate = addDays(new Date(firstDueDate), i * intervalDays)
-    installments.push({
-      number: i + 1,
-      value: i === count - 1 ? remaining - installmentValue * (count - 1) : installmentValue,
-      dueDate,
+/**
+ * Monta as parcelas de uma venda em promissória, no formato que a RPC
+ * executar_venda espera. Entrada (se houver) vira a parcela nº 0 com
+ * vencimento hoje; as demais vencem mensalmente. A ÚLTIMA parcela absorve a
+ * diferença de arredondamento (ex.: R$ 100 em 3× = 33,33 + 33,33 + 33,34),
+ * garantindo que a soma feche exatamente com o total.
+ */
+export function gerarParcelasPromissoria(params: {
+  clienteNome: string
+  clienteTelefone: string
+  total: number
+  entrada?: number
+  numeroParcelas: number
+  dataBase?: Date
+}): ParcelaPromissoria[] {
+  const { clienteNome, clienteTelefone, numeroParcelas } = params
+  const entrada = params.entrada ?? 0
+  const base = params.dataBase ?? new Date()
+  const comum = { clienteNome, clienteTelefone, totalParcelas: numeroParcelas, valorPago: 0, status: 'pendente', pagamentos: [] }
+
+  const restante = Math.round((params.total - entrada) * 100) / 100
+  const valorParcela = Math.round((restante / numeroParcelas) * 100) / 100
+  const valorUltima = Math.round((restante - valorParcela * (numeroParcelas - 1)) * 100) / 100
+
+  const parcelas: ParcelaPromissoria[] = []
+  if (entrada > 0) {
+    parcelas.push({ ...comum, numero: 0, valor: entrada, dataVencimento: base.toISOString() })
+  }
+  for (let i = 1; i <= numeroParcelas; i++) {
+    const vencimento = new Date(base)
+    vencimento.setMonth(vencimento.getMonth() + i)
+    parcelas.push({
+      ...comum,
+      numero: i,
+      valor: i === numeroParcelas ? valorUltima : valorParcela,
+      dataVencimento: vencimento.toISOString(),
     })
   }
-
-  return installments
+  return parcelas
 }
 
 // ─── Códigos internos ─────────────────────────────────────────────────────────

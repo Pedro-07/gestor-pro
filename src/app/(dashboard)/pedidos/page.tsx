@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchPedidos, fetchClientes, executarVenda, insertClienteRetornando, marcarPedidoFinalizado, cancelarPedido } from '@/lib/database'
-import type { Pedido, PedidoStatus, Cliente, FormaPagamento, ItemVenda } from '@/types'
+import { fetchPedidos, fetchClientes, finalizarPedidoVenda, insertClienteRetornando, cancelarPedido } from '@/lib/database'
+import type { Pedido, PedidoStatus, Cliente, FormaPagamento } from '@/types'
 import { useAppConfig } from '@/hooks/useAppConfig'
-import { formatCurrency, formatDate, formatPhone, buildWhatsAppUrl, generateClientCode } from '@/lib/utils'
+import { formatCurrency, formatDate, formatPhone, buildWhatsAppUrl, generateClientCode, gerarParcelasPromissoria } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -44,6 +44,7 @@ export default function PedidosPage() {
   const [statusFilter, setStatusFilter] = useState<'novos' | 'todos'>('novos')
   const [finalizando, setFinalizando] = useState<Pedido | null>(null)
   const [cancelando, setCancelando] = useState<Pedido | null>(null)
+  const [finalizado, setFinalizado] = useState<Pedido | null>(null)
   const [saving, setSaving] = useState(false)
 
   // Estado do dialog de finalização
@@ -94,36 +95,20 @@ export default function PedidosPage() {
         clienteId = novo.id; clienteNome = novo.nome; clienteCidade = novo.cidade; clienteTelefone = novo.telefone ?? ''
       }
 
-      // 2) Itens da venda (o pedido já traz preço/subtotal calculados no servidor)
-      const itens: ItemVenda[] = pedido.itens.map(({ produtoId, produtoNome, tamanho, quantidade, precoUnitario, subtotal }) => ({
-        produtoId, produtoNome, tamanho, quantidade, precoUnitario, subtotal,
-      }))
+      // 2) Parcelas (nota promissória) — última absorve o arredondamento.
+      // Os itens da venda vêm do próprio pedido, lidos no banco pela RPC.
+      const parcelas = formaPagamento === 'promissoria'
+        ? gerarParcelasPromissoria({ clienteNome, clienteTelefone, total: pedido.total, entrada, numeroParcelas })
+        : undefined
 
-      // 3) Parcelas (nota promissória)
-      let parcelas: Array<{ clienteNome: string; clienteTelefone: string; numero: number; totalParcelas: number; valor: number; valorPago: number; dataVencimento: string; status: string; pagamentos: unknown[] }> | undefined
-      if (formaPagamento === 'promissoria') {
-        parcelas = []
-        const restante = pedido.total - entrada
-        const valorParcela = Math.round((restante / numeroParcelas) * 100) / 100
-        const now = new Date()
-        if (entrada > 0) {
-          parcelas.push({ clienteNome, clienteTelefone, numero: 0, totalParcelas: numeroParcelas, valor: entrada, valorPago: 0, dataVencimento: now.toISOString(), status: 'pendente', pagamentos: [] })
-        }
-        for (let i = 1; i <= numeroParcelas; i++) {
-          const due = new Date(now); due.setMonth(due.getMonth() + i)
-          parcelas.push({ clienteNome, clienteTelefone, numero: i, totalParcelas: numeroParcelas, valor: valorParcela, valorPago: 0, dataVencimento: due.toISOString(), status: 'pendente', pagamentos: [] })
-        }
-      }
-
-      // 4) Executar a venda (baixa de estoque transacional) e vincular ao pedido
-      const vendaId = await executarVenda({
-        clienteId, clienteNome, clienteCidade, itens, total: pedido.total, formaPagamento,
+      // 4) Finalizar numa única transação (RPC): trava o pedido, valida que
+      // ainda está 'novo', executa a venda e vincula — impede dupla finalização.
+      await finalizarPedidoVenda({
+        pedidoId: pedido.id, clienteId, clienteNome, clienteCidade, formaPagamento,
         entrada: formaPagamento === 'promissoria' ? entrada : 0,
         numeroParcelas: formaPagamento === 'promissoria' ? numeroParcelas : 1,
-        observacoes: `Pedido online #${pedido.id.slice(0, 8)}`,
         parcelas,
       })
-      await marcarPedidoFinalizado(pedido.id, vendaId)
 
       qc.invalidateQueries({ queryKey: ['pedidos'] })
       qc.invalidateQueries({ queryKey: ['pedidos-novos-count'] })
@@ -132,8 +117,8 @@ export default function PedidosPage() {
       qc.invalidateQueries({ queryKey: ['parcelas'] })
       qc.invalidateQueries({ queryKey: ['clientes'] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })
-      toast.success('Pedido finalizado e venda registrada!')
       setFinalizando(null)
+      setFinalizado(pedido)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao finalizar o pedido')
     } finally {
@@ -151,6 +136,19 @@ export default function PedidosPage() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao cancelar')
     }
+  }
+
+  function mensagemConfirmacao(p: Pedido): string {
+    const linhas = [
+      `Olá, ${p.clienteNome}! ✅ Seu pedido #${p.id.slice(0, 8)} na ${nomeApp} foi confirmado.`,
+      '',
+      ...p.itens.map((it) => `• ${it.quantidade}x ${it.produtoNome}${it.tamanho ? ` (${it.tamanho})` : ''} — ${formatCurrency(it.subtotal)}`),
+      '',
+      `*Total: ${formatCurrency(p.total)}*`,
+      '',
+      'Vamos combinar o pagamento e a entrega por aqui. Obrigado pela preferência! 🛍️',
+    ]
+    return linhas.join('\n')
   }
 
   async function copiarLink() {
@@ -352,6 +350,26 @@ export default function PedidosPage() {
             <Button variant="outline" onClick={() => setFinalizando(null)}>Voltar</Button>
             <Button onClick={finalizar} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirmar venda</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pedido finalizado: avisar o cliente */}
+      <Dialog open={!!finalizado} onOpenChange={(o) => { if (!o) setFinalizado(null) }}>
+        <DialogContent className="max-w-xs text-center">
+          <div className="space-y-3 py-2">
+            <CheckCircle2 className="h-14 w-14 text-green-500 mx-auto" />
+            <div>
+              <h2 className="text-xl font-bold">Venda registrada!</h2>
+              <p className="text-sm text-muted-foreground mt-1">O estoque foi baixado e a venda criada a partir do pedido.</p>
+            </div>
+            {finalizado?.clienteTelefone && (
+              <Button className="w-full bg-green-600 hover:bg-green-700 text-white"
+                onClick={() => window.open(buildWhatsAppUrl(finalizado.clienteTelefone, mensagemConfirmacao(finalizado)), '_blank')}>
+                <MessageCircle className="h-4 w-4 mr-2" />Avisar cliente no WhatsApp
+              </Button>
+            )}
+          </div>
+          <DialogFooter><Button variant="outline" className="w-full" onClick={() => setFinalizado(null)}>Fechar</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
