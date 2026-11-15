@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchProdutos, fetchFornecedores, insertProduto, updateProduto, deleteProduto, setProdutoAtivo, uploadFile, fetchVendas, fetchMovimentacoesByProduto, insertMovimentacao, fetchProdutoIdsComMovimento } from '@/lib/database'
-import type { Produto, CategoriaProduto, Fornecedor, Tamanho } from '@/types'
+import type { Produto, Fornecedor, Tamanho } from '@/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useForm, Controller, type Resolver } from 'react-hook-form'
 import { useAppConfig } from '@/hooks/useAppConfig'
@@ -26,7 +26,7 @@ import { Combobox } from '@/components/shared/combobox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Plus, Search, MoreVertical, Pencil, Trash2, Package, UploadCloud, Loader2, Image as ImageIcon, History, TrendingUp, Info, ArrowUpRight, Ban, Power, SlidersHorizontal } from 'lucide-react'
+import { Plus, Search, MoreVertical, Pencil, Trash2, Package, UploadCloud, Loader2, History, TrendingUp, Info, ArrowUpRight, Ban, Power, SlidersHorizontal } from 'lucide-react'
 import Image from 'next/image'
 import { BarcodeScanner } from '@/components/shared/barcode-scanner'
 
@@ -203,7 +203,7 @@ export default function EstoquePage() {
       setDialogOpen(false)
     } catch (err) {
       console.error('Erro ao salvar produto:', err)
-      toast.error('Erro ao salvar produto')
+      toast.error(err instanceof Error && err.message ? err.message : 'Erro ao salvar produto')
     } finally {
       setSaving(false)
     }

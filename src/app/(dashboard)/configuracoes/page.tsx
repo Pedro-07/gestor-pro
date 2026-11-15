@@ -104,7 +104,7 @@ export default function ConfiguracoesPage() {
       if (code === '23505') {
         toast.error('Esse endereço de loja (slug) já está em uso. Escolha outro.')
       } else {
-        toast.error('Erro ao salvar configurações')
+        toast.error(err instanceof Error && err.message ? err.message : 'Erro ao salvar configurações')
       }
     } finally {
       setSaving(false)

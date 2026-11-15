@@ -1,7 +1,9 @@
 // Compressão/redimensionamento de imagem no navegador (antes do upload).
 // Reduz fotos de 2–3 MB (direto da câmera) para ~100–300 KB sem perda visível,
-// convertendo para WebP (menor que JPEG na mesma qualidade). Se algo falhar
-// (ex.: HEIC que o browser não decodifica), devolve o arquivo original.
+// convertendo para WebP (menor que JPEG na mesma qualidade).
+// Imagem que o navegador NÃO decodifica (ex.: HEIC do iPhone) é rejeitada com
+// erro amigável: se subisse o original, a foto apareceria quebrada para os
+// clientes no catálogo (a maioria dos navegadores não exibe HEIC).
 
 export interface CompressResult {
   blob: Blob
@@ -82,7 +84,6 @@ export async function compressImage(
 
     return { blob, ext, type }
   } catch {
-    // Qualquer falha de decodificação → envia o original sem quebrar o fluxo.
-    return { blob: file, ext: extDoArquivo(file), type: file.type }
+    throw new Error('Não foi possível ler esta imagem. Envie a foto em JPEG ou PNG (no iPhone: Ajustes → Câmera → Formatos → "Mais compatível").')
   }
 }
