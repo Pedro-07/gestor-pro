@@ -415,49 +415,52 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog do carrinho */}
+      {/* Dialog do carrinho — cabeçalho e rodapé fixos, só a lista rola */}
       <Dialog open={cartOpen} onOpenChange={setCartOpen}>
-        <DialogContent className="sm:max-w-md max-h-[90dvh] overflow-y-auto">
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><ShoppingCart className="h-5 w-5" />Seu carrinho</DialogTitle></DialogHeader>
+        <DialogContent className="sm:max-w-md max-h-[90dvh] flex flex-col gap-0 p-0 overflow-hidden">
+          <DialogHeader className="shrink-0 p-4 pb-3 border-b"><DialogTitle className="flex items-center gap-2"><ShoppingCart className="h-5 w-5" />Seu carrinho</DialogTitle></DialogHeader>
           {cart.length === 0 ? (
-            <div className="text-center py-10 text-muted-foreground"><Package className="h-10 w-10 mx-auto mb-2 opacity-30" /><p className="text-sm">Carrinho vazio</p></div>
+            <div className="flex-1 text-center py-10 text-muted-foreground"><Package className="h-10 w-10 mx-auto mb-2 opacity-30" /><p className="text-sm">Carrinho vazio</p></div>
           ) : (
-            <div className="space-y-3">
-              {cart.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-2.5 rounded-xl border p-2">
-                  <div className="h-12 w-12 shrink-0 rounded-lg bg-muted border flex items-center justify-center overflow-hidden">
-                    {item.fotoUrl
-                      ? <Image src={item.fotoUrl} alt={item.produtoNome} width={48} height={48} className="object-cover w-full h-full" />
-                      : <Package className="h-5 w-5 text-muted-foreground/40" />}
+            <>
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {cart.map((item, idx) => (
+                  <div key={idx} className="flex items-center gap-2.5 rounded-xl border p-2">
+                    <div className="h-12 w-12 shrink-0 rounded-lg bg-muted border flex items-center justify-center overflow-hidden">
+                      {item.fotoUrl
+                        ? <Image src={item.fotoUrl} alt={item.produtoNome} width={48} height={48} className="object-cover w-full h-full" />
+                        : <Package className="h-5 w-5 text-muted-foreground/40" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate leading-tight">{item.produtoNome}</p>
+                      <p className="text-[11px] text-muted-foreground">{usarTamanhos ? `${item.tamanho} · ` : ''}{formatCurrency(item.precoUnitario)}</p>
+                      <p className="text-sm font-semibold">{formatCurrency(item.subtotal)}</p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => setQty(idx, -1)} className="h-7 w-7 rounded-md border flex items-center justify-center hover:bg-muted"><Minus className="h-3.5 w-3.5" /></button>
+                      <span className="w-6 text-center text-sm font-medium">{item.quantidade}</span>
+                      <button onClick={() => setQty(idx, +1)} className="h-7 w-7 rounded-md border flex items-center justify-center hover:bg-muted"><Plus className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => removeItem(idx)} className="h-7 w-7 rounded-md flex items-center justify-center text-destructive hover:bg-destructive/10 ml-0.5"><Trash2 className="h-4 w-4" /></button>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate leading-tight">{item.produtoNome}</p>
-                    <p className="text-[11px] text-muted-foreground">{usarTamanhos ? `${item.tamanho} · ` : ''}{formatCurrency(item.precoUnitario)}</p>
-                    <p className="text-sm font-semibold">{formatCurrency(item.subtotal)}</p>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => setQty(idx, -1)} className="h-7 w-7 rounded-md border flex items-center justify-center hover:bg-muted"><Minus className="h-3.5 w-3.5" /></button>
-                    <span className="w-6 text-center text-sm font-medium">{item.quantidade}</span>
-                    <button onClick={() => setQty(idx, +1)} className="h-7 w-7 rounded-md border flex items-center justify-center hover:bg-muted"><Plus className="h-3.5 w-3.5" /></button>
-                    <button onClick={() => removeItem(idx)} className="h-7 w-7 rounded-md flex items-center justify-center text-destructive hover:bg-destructive/10 ml-0.5"><Trash2 className="h-4 w-4" /></button>
-                  </div>
-                </div>
-              ))}
-              <Separator />
-              <div className="flex justify-between font-bold text-lg"><span>Total</span><span>{formatCurrency(cartTotal)}</span></div>
-              <Button className="w-full" size="lg" onClick={abrirCheckout}>Continuar</Button>
-            </div>
+                ))}
+              </div>
+              <div className="shrink-0 border-t bg-muted/50 p-4 space-y-2">
+                <div className="flex justify-between font-bold text-lg"><span>Total</span><span>{formatCurrency(cartTotal)}</span></div>
+                <Button className="w-full" size="lg" onClick={abrirCheckout}>Continuar</Button>
+              </div>
+            </>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Dialog de checkout: cadastro + sucesso */}
+      {/* Dialog de checkout: cadastro + sucesso — cabeçalho e rodapé fixos, só o meio rola */}
       <Dialog open={checkoutOpen} onOpenChange={(o) => { setCheckoutOpen(o); if (!o) setEtapa('cadastro') }}>
-        <DialogContent className="sm:max-w-md max-h-[90dvh] overflow-y-auto">
+        <DialogContent className="sm:max-w-md max-h-[90dvh] flex flex-col gap-0 p-0 overflow-hidden">
           {etapa === 'cadastro' ? (
             <>
-              <DialogHeader><DialogTitle>Seus dados</DialogTitle></DialogHeader>
-              <div className="space-y-3">
+              <DialogHeader className="shrink-0 p-4 pb-3 border-b"><DialogTitle>Seus dados</DialogTitle></DialogHeader>
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
                 <div className="space-y-1">
                   <Label>Nome completo *</Label>
                   <Input placeholder="Seu nome" value={nome} onChange={(e) => setNome(onlyLetters(e.target.value))} />
@@ -496,13 +499,13 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
                   <div className="flex justify-between font-bold text-base pt-1"><span>Total</span><span>{formatCurrency(cartTotal)}</span></div>
                 </div>
               </div>
-              <DialogFooter className="flex-col sm:flex-row gap-2">
+              <DialogFooter className="shrink-0 flex-col sm:flex-row gap-2 m-0 border-t bg-muted/50 p-4">
                 <Button variant="outline" onClick={() => { setCheckoutOpen(false); setCartOpen(true) }}><ArrowLeft className="h-4 w-4 mr-1.5" />Voltar</Button>
                 <Button onClick={confirmarPedido} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirmar pedido</Button>
               </DialogFooter>
             </>
           ) : (
-            <div className="text-center space-y-4 py-2">
+            <div className="flex-1 overflow-y-auto text-center space-y-4 p-6">
               <CheckCircle2 className="h-14 w-14 text-green-500 mx-auto" />
               <div>
                 <h2 className="text-xl font-bold">Pedido enviado!</h2>
