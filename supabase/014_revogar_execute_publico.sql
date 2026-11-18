@@ -1,26 +1,38 @@
 -- ============================================================================
 -- MIGRATION 014 — Travar EXECUTE das RPCs internas (apenas authenticated)
 --
--- O Postgres concede EXECUTE a PUBLIC por padrão ao criar uma função. As RPCs
--- 012/013 ganharam GRANT para `authenticated`, mas o PUBLIC nunca foi revogado
--- — então o role `anon` também conseguia chamá-las. Não havia risco de dados
--- (ambas são SECURITY INVOKER e o RLS por loja_id = auth.uid() bloqueia tudo
--- para o anônimo), mas é superfície desnecessária. Aqui removemos o PUBLIC e
--- deixamos só `authenticated`.
+-- As RPCs internas (registrar_pagamento, finalizar_pedido, executar_venda) são
+-- SECURITY INVOKER: o RLS por loja_id = auth.uid() já bloqueia TODO acesso do
+-- anônimo (um anon sempre recebe "não encontrado"). Não há risco de dados —
+-- isto é só remoção de superfície desnecessária.
 --
--- criar_pedido NÃO entra aqui: é SECURITY DEFINER e DEVE continuar público
--- (anon) — é o fluxo do catálogo. Sua proteção é a validação interna por slug.
+-- IMPORTANTE: no Supabase não basta REVOKE FROM PUBLIC. O schema `public` tem
+-- DEFAULT PRIVILEGES que concedem EXECUTE a `anon` EXPLICITAMENTE ao criar a
+-- função. Por isso revogamos de PUBLIC **e** de anon. Mantemos authenticated.
 --
--- Idempotente. Execute no SQL Editor do Supabase.
+-- Usa regprocedure (DO block) para pegar a assinatura real de cada função,
+-- independentemente dos tipos declarados, e é idempotente/seguro se alguma
+-- não existir nesta base.
+--
+-- criar_pedido NÃO entra aqui: é SECURITY DEFINER e DEVE seguir público (anon)
+-- — é o fluxo do catálogo, protegido pela validação interna de slug.
+--
+-- Execute no SQL Editor do Supabase.
 -- ============================================================================
 
-REVOKE EXECUTE ON FUNCTION registrar_pagamento(UUID, NUMERIC, TIMESTAMPTZ, TEXT, TEXT) FROM PUBLIC;
-GRANT  EXECUTE ON FUNCTION registrar_pagamento(UUID, NUMERIC, TIMESTAMPTZ, TEXT, TEXT) TO authenticated;
-
-REVOKE EXECUTE ON FUNCTION finalizar_pedido(UUID, UUID, TEXT, TEXT, TEXT, NUMERIC, INT, JSONB) FROM PUBLIC;
-GRANT  EXECUTE ON FUNCTION finalizar_pedido(UUID, UUID, TEXT, TEXT, TEXT, NUMERIC, INT, JSONB) TO authenticated;
-
--- Os helpers transacionais chamados internamente também não precisam de PUBLIC.
--- (Idempotente: se algum nome/assinatura não existir nesta base, comente a linha.)
-REVOKE EXECUTE ON FUNCTION executar_venda(UUID, TEXT, TEXT, JSONB, NUMERIC, TEXT, NUMERIC, INT, TEXT, JSONB) FROM PUBLIC;
-GRANT  EXECUTE ON FUNCTION executar_venda(UUID, TEXT, TEXT, JSONB, NUMERIC, TEXT, NUMERIC, INT, TEXT, JSONB) TO authenticated;
+DO $$
+DECLARE
+  f RECORD;
+BEGIN
+  FOR f IN
+    SELECT p.oid::regprocedure AS sig
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname IN ('registrar_pagamento', 'finalizar_pedido', 'executar_venda')
+  LOOP
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC, anon', f.sig);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO authenticated', f.sig);
+    RAISE NOTICE 'EXECUTE restrito a authenticated: %', f.sig;
+  END LOOP;
+END $$;
