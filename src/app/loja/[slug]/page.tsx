@@ -30,12 +30,12 @@ interface CartItem {
 type Etapa = 'cadastro' | 'sucesso'
 
 // Foto robusta para o catálogo público:
-// - NENHUMA imagem usa lazy-loading: em iPhones (Safari, principalmente com
-//   Modo de Baixo Consumo) imagens lazy inseridas via JS só carregam após uma
-//   interação — davam "card vazio até tocar". `loading="eager"` carrega todas
-//   de imediato; o navegador enfileira o download (~6 por vez), sem travar.
-// - `priority` (preload) fica só nas primeiras (LCP) para não gerar dezenas de
-//   <link rel=preload>.
+// - As imagens da grade pedem variantes PEQUENAS (sizes baixo → w≤384): geram
+//   rápido no otimizador da Vercel (as w=640 saíam cache=MISS, ~1s cada) e
+//   evitam estouro de memória de decodificação do iOS com dezenas de produtos.
+// - Só as primeiras (acima da dobra) são `priority`; o resto é lazy, carregando
+//   conforme o cliente rola — evita 82 requisições de uma vez (engarrafamento
+//   que, no Modo de Baixo Consumo do iPhone, deixava os cards sem foto).
 // - Se a versão otimizada (/_next/image) falhar, cai para a URL original.
 function FotoProduto({ src, alt, sizes, className, priority = false }: {
   src: string
@@ -48,8 +48,9 @@ function FotoProduto({ src, alt, sizes, className, priority = false }: {
   return (
     <Image
       src={src} alt={alt} fill sizes={sizes} className={className}
+      quality={70}
       priority={priority}
-      loading={priority ? undefined : 'eager'}
+      loading={priority ? undefined : 'lazy'}
       unoptimized={semOtimizar}
       onError={() => setSemOtimizar(true)}
     />
@@ -331,7 +332,7 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
                   className="text-left rounded-xl border bg-card overflow-hidden flex flex-col group focus:outline-none focus:ring-2 focus:ring-ring">
                   <div className="aspect-square bg-muted relative">
                     {p.fotoUrl
-                      ? <FotoProduto src={p.fotoUrl} alt={p.nome} priority={idx < 4} className={`object-cover transition-transform group-hover:scale-105 ${esgotado ? 'grayscale opacity-60' : ''}`} sizes="(max-width: 640px) 50vw, 320px" />
+                      ? <FotoProduto src={p.fotoUrl} alt={p.nome} priority={idx < 6} className={`object-cover transition-transform group-hover:scale-105 ${esgotado ? 'grayscale opacity-60' : ''}`} sizes="128px" />
                       : <div className="w-full h-full flex items-center justify-center"><Package className="h-10 w-10 text-muted-foreground/30" /></div>}
                     {esgotado ? (
                       <span className="absolute bottom-2 left-2 rounded-md bg-black/70 text-white text-[11px] font-semibold px-2 py-1 backdrop-blur-sm">Esgotado</span>
