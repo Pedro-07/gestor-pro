@@ -30,21 +30,26 @@ interface CartItem {
 type Etapa = 'cadastro' | 'sucesso'
 
 // Foto robusta para o catálogo público:
-// - `eager` desativa o lazy-loading nativo (Safari/webview do WhatsApp trava
-//   imagens lazy inseridas dinamicamente — só carregavam após um toque).
+// - NENHUMA imagem usa lazy-loading: em iPhones (Safari, principalmente com
+//   Modo de Baixo Consumo) imagens lazy inseridas via JS só carregam após uma
+//   interação — davam "card vazio até tocar". `loading="eager"` carrega todas
+//   de imediato; o navegador enfileira o download (~6 por vez), sem travar.
+// - `priority` (preload) fica só nas primeiras (LCP) para não gerar dezenas de
+//   <link rel=preload>.
 // - Se a versão otimizada (/_next/image) falhar, cai para a URL original.
-function FotoProduto({ src, alt, sizes, className, eager = false }: {
+function FotoProduto({ src, alt, sizes, className, priority = false }: {
   src: string
   alt: string
   sizes: string
   className?: string
-  eager?: boolean
+  priority?: boolean
 }) {
   const [semOtimizar, setSemOtimizar] = useState(false)
   return (
     <Image
       src={src} alt={alt} fill sizes={sizes} className={className}
-      priority={eager} loading={eager ? 'eager' : undefined}
+      priority={priority}
+      loading={priority ? undefined : 'eager'}
       unoptimized={semOtimizar}
       onError={() => setSemOtimizar(true)}
     />
@@ -326,7 +331,7 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
                   className="text-left rounded-xl border bg-card overflow-hidden flex flex-col group focus:outline-none focus:ring-2 focus:ring-ring">
                   <div className="aspect-square bg-muted relative">
                     {p.fotoUrl
-                      ? <FotoProduto src={p.fotoUrl} alt={p.nome} eager={idx < 6} className={`object-cover transition-transform group-hover:scale-105 ${esgotado ? 'grayscale opacity-60' : ''}`} sizes="(max-width: 640px) 50vw, 320px" />
+                      ? <FotoProduto src={p.fotoUrl} alt={p.nome} priority={idx < 4} className={`object-cover transition-transform group-hover:scale-105 ${esgotado ? 'grayscale opacity-60' : ''}`} sizes="(max-width: 640px) 50vw, 320px" />
                       : <div className="w-full h-full flex items-center justify-center"><Package className="h-10 w-10 text-muted-foreground/30" /></div>}
                     {esgotado ? (
                       <span className="absolute bottom-2 left-2 rounded-md bg-black/70 text-white text-[11px] font-semibold px-2 py-1 backdrop-blur-sm">Esgotado</span>
@@ -377,7 +382,7 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
                 {/* Imagem completa (contain) sobre fundo escuro — sem cortar */}
                 <div className="relative aspect-square bg-neutral-900">
                   {detalhe.fotoUrl
-                    ? <FotoProduto src={detalhe.fotoUrl} alt={detalhe.nome} eager className="object-contain" sizes="(max-width: 640px) 100vw, 448px" />
+                    ? <FotoProduto src={detalhe.fotoUrl} alt={detalhe.nome} priority className="object-contain" sizes="(max-width: 640px) 100vw, 448px" />
                     : <div className="w-full h-full flex items-center justify-center"><Package className="h-16 w-16 text-white/20" /></div>}
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent p-4 pt-12 pointer-events-none">
                     <h2 className="text-white text-lg font-bold leading-tight drop-shadow">{detalhe.nome}</h2>
