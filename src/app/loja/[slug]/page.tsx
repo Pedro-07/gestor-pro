@@ -332,7 +332,7 @@ export default function CatalogoPage({ params }: { params: { slug: string } }) {
                   className="text-left rounded-xl border bg-card overflow-hidden flex flex-col group focus:outline-none focus:ring-2 focus:ring-ring">
                   <div className="aspect-square bg-muted relative">
                     {p.fotoUrl
-                      ? <FotoProduto src={p.fotoUrl} alt={p.nome} priority={idx < 6} className={`object-cover ${esgotado ? 'grayscale opacity-60' : ''}`} sizes="128px" />
+                      ? <FotoProduto src={p.fotoUrl} alt={p.nome} priority={idx < 6} className={`object-cover ${esgotado ? 'grayscale opacity-60' : ''}`} sizes="(max-width: 640px) 128px, 320px" />
                       : <div className="w-full h-full flex items-center justify-center"><Package className="h-10 w-10 text-muted-foreground/30" /></div>}
                     {esgotado ? (
                       <span className="absolute bottom-2 left-2 rounded-md bg-black/80 text-white text-[11px] font-semibold px-2 py-1">Esgotado</span>
